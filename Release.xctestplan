@@ -1,0 +1,31 @@
+{
+  "configurations" : [
+    {
+      "id" : "9C968A5A-5399-4D37-8F35-532D5C66F2B6",
+      "name" : "Release",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:CozyTime.xcodeproj",
+        "identifier" : "3DA29C6489879300556C5C89",
+        "name" : "CozyTimeTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:CozyTime.xcodeproj",
+        "identifier" : "C3F64FDA982E27DB0CB03E37",
+        "name" : "CozyTimeUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

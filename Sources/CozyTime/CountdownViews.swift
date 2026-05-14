@@ -1,0 +1,1353 @@
+import CozyCore
+import SwiftUI
+
+struct CountdownsView: View {
+    @EnvironmentObject private var dataStore: AppDataStore
+    @EnvironmentObject private var notifications: NotificationService
+
+    @State private var title = ""
+    @State private var targetDate = Calendar.autoupdatingCurrent.date(byAdding: .day, value: 7, to: Date()) ?? Date()
+    @State private var remindersEnabled = false
+    @State private var lastAddedCountdown: CountdownEvent?
+    @State private var lastAddedCountdownScheduledAlerts = 0
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
+                SectionHeader(title: "Countdowns", subtitle: "Make deadlines and sweet events visible.", mascotState: .countdown)
+
+                countdownComposer
+
+                if dataStore.countdowns.isEmpty {
+                    EmptyStateView(
+                        title: "No countdowns yet",
+                        message: "Add an exam, trip, birthday, or tiny release date.",
+                        mascotState: .countdown,
+                        actionTitle: "Create a 7-day countdown"
+                    ) {
+                        title = "First cozy countdown"
+                        addCountdown()
+                    }
+                        .frame(minHeight: 280)
+                } else {
+                    LazyVStack(spacing: CozyLayout.gridSpacing) {
+                        ForEach(dataStore.countdowns.sorted { $0.targetDate < $1.targetDate }) { event in
+                            CountdownCard(event: event)
+                        }
+                    }
+                }
+            }
+            .cozyPageFrame()
+        }
+        .accessibilityIdentifier("screen.countdowns")
+    }
+
+    private var countdownComposer: some View {
+        VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                    titleField
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                        datePicker
+                        reminderToggle
+                        addButton
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+                    titleField
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                        datePicker
+                        addButton
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    reminderToggle
+                }
+            }
+            if let lastAddedCountdown {
+                countdownAddFeedback(event: lastAddedCountdown)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .cozyCard()
+    }
+
+    private var titleField: some View {
+        CozyLabeledControl(title: "Countdown", symbolName: "hourglass", minWidth: 260) {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Trip, exam, release...", text: $title)
+                    .onSubmit(addCountdown)
+                    .accessibilityIdentifier("countdown.title")
+                    .cozyTextInput(minWidth: 260, alignment: .leading)
+                if cleanTitle.isEmpty {
+                    CozyFieldHint(text: "Name the countdown first.")
+                }
+            }
+        }
+        .layoutPriority(1)
+    }
+
+    private var datePicker: some View {
+        CozyLabeledControl(title: "Date", symbolName: "calendar") {
+            CozyDateInput(date: $targetDate)
+                .accessibilityIdentifier("countdown.date")
+        }
+    }
+
+    private var addButton: some View {
+        CozyLabeledControl(title: "Action", symbolName: "plus.circle", minWidth: 132) {
+            Button {
+                addCountdown()
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .cozyPrimaryButton(minWidth: 128, fullWidth: true)
+            .disabled(cleanTitle.isEmpty || isPastTargetDate)
+            .help(addButtonHelp)
+            .accessibilityHint(addButtonHelp)
+            .accessibilityIdentifier("countdown.add")
+        }
+    }
+
+    private var reminderToggle: some View {
+        CozyLabeledControl(title: "Alerts", symbolName: "bell.badge", minWidth: 190) {
+            CozyToggleRow(
+                title: "Countdown reminders",
+                symbolName: "bell.badge",
+                subtitle: "7d, 1d, day-of",
+                isOn: $remindersEnabled
+            )
+            .accessibilityIdentifier("countdown.reminders")
+        }
+    }
+
+    private func addCountdown() {
+        guard !cleanTitle.isEmpty, !isPastTargetDate else { return }
+        let event = CountdownEvent(
+            title: cleanTitle,
+            targetDate: targetDate,
+            stickerName: autoSticker(for: cleanTitle),
+            remindersEnabled: remindersEnabled
+        )
+        dataStore.addCountdown(event)
+        lastAddedCountdownScheduledAlerts = remindersEnabled ? -1 : 0
+        if remindersEnabled {
+            Task {
+                let scheduledCount = await notifications.scheduleCountdownMilestones(for: event)
+                await MainActor.run {
+                    if scheduledCount == 0 {
+                        dataStore.updateCountdown(withID: event.id, remindersEnabled: false)
+                    }
+                    lastAddedCountdownScheduledAlerts = scheduledCount
+                }
+            }
+        }
+        CozyFeedback.play(.add)
+        lastAddedCountdown = event
+        title = ""
+    }
+
+    private func countdownAddFeedback(event: CountdownEvent) -> some View {
+        HStack(spacing: 8) {
+            Label(countdownAddFeedbackText(for: event), systemImage: countdownAddFeedbackSymbol(for: event))
+                .font(CozyType.captionStrong)
+                .foregroundStyle(event.remindersEnabled && lastAddedCountdownScheduledAlerts == 0 ? CozyPalette.persimmon : CozyPalette.focusJade)
+            Spacer()
+            Button("Undo") {
+                dataStore.deleteCountdown(id: event.id)
+                Task { await notifications.cancelCountdownNotifications(for: event.id) }
+                lastAddedCountdown = nil
+                CozyFeedback.play(.undo)
+            }
+            .cozyGhostButton(minWidth: 64)
+            Button {
+                addPrepTask(for: event)
+                lastAddedCountdown = nil
+            } label: {
+                Label("Add prep task", systemImage: "checklist")
+            }
+            .cozySecondaryButton(minWidth: 132)
+        }
+        .padding(.top, 2)
+        .accessibilityIdentifier("countdown.add.feedback")
+    }
+
+    private func countdownAddFeedbackText(for event: CountdownEvent) -> String {
+        guard event.remindersEnabled else { return "Countdown saved" }
+        if lastAddedCountdownScheduledAlerts < 0 { return "Countdown saved. Scheduling alerts..." }
+        return lastAddedCountdownScheduledAlerts > 0
+            ? "Countdown saved with \(lastAddedCountdownScheduledAlerts) alerts"
+            : "Countdown saved. Alerts need notification permission."
+    }
+
+    private func countdownAddFeedbackSymbol(for event: CountdownEvent) -> String {
+        event.remindersEnabled && lastAddedCountdownScheduledAlerts == 0 ? "bell.slash.fill" : "checkmark.circle.fill"
+    }
+
+    private func addPrepTask(for event: CountdownEvent) {
+        let task = TaskItem(
+            title: "Prep for \(event.title)",
+            dueDate: Date(),
+            priority: 1,
+            listName: "Countdowns",
+            tagText: "prep",
+            estimatedMinutes: 15
+        )
+        dataStore.addTask(task)
+        CozyFeedback.play(.add)
+    }
+
+    private var cleanTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isPastTargetDate: Bool {
+        Calendar.autoupdatingCurrent.startOfDay(for: targetDate) < Calendar.autoupdatingCurrent.startOfDay(for: Date())
+    }
+
+    private var addButtonHelp: String {
+        if cleanTitle.isEmpty { return "Type a countdown title first." }
+        if isPastTargetDate { return "Pick today or a future date." }
+        return "Add this countdown."
+    }
+
+    private func autoSticker(for title: String) -> String {
+        let lower = title.lowercased()
+        if lower.contains("exam") || lower.contains("study") || lower.contains("test") { return "book.closed.fill" }
+        if lower.contains("trip") || lower.contains("flight") || lower.contains("travel") { return "suitcase.fill" }
+        if lower.contains("birthday") || lower.contains("party") { return "party.popper.fill" }
+        if lower.contains("date") || lower.contains("anniversary") { return "heart.fill" }
+        if lower.contains("release") || lower.contains("deadline") || lower.contains("ship") { return "sparkles" }
+        return "rosette"
+    }
+}
+
+struct CountdownCard: View {
+    @EnvironmentObject private var dataStore: AppDataStore
+    @EnvironmentObject private var notifications: NotificationService
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showingDetails = false
+    @State private var isConfirmingDelete = false
+    @State private var isEditing = false
+    @State private var draftTitle = ""
+    @State private var draftDate = Date()
+    @State private var draftNotes = ""
+    @State private var draftRemindersEnabled = false
+    @State private var savedEditFeedback = false
+    @State private var savedEditAlertCount: Int?
+    let event: CountdownEvent
+
+    var body: some View {
+        let phase = event.phase()
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                CountdownStickerFrame(event: event, phase: phase)
+                Spacer()
+                CountdownPhaseBadge(phase: phase, color: daysColor)
+                reminderStatus
+                Button {
+                    withAnimation(.snappy(duration: 0.18)) {
+                        syncDraft()
+                        isEditing.toggle()
+                        savedEditFeedback = false
+                        isConfirmingDelete = false
+                    }
+                } label: {
+                    Image(systemName: isEditing ? "xmark" : "pencil")
+                        .frame(width: 22, height: 22)
+                }
+                .cozyIconButton(size: CozyLayout.hitSize)
+                .contentShape(Rectangle())
+                .help(isEditing ? "Close countdown edit" : "Edit countdown")
+                .accessibilityLabel(isEditing ? "Close countdown edit" : "Edit \(event.title)")
+                Button(role: .destructive) {
+                    withAnimation(.snappy(duration: 0.18)) {
+                        isConfirmingDelete.toggle()
+                        isEditing = false
+                    }
+                } label: {
+                    Image(systemName: isConfirmingDelete ? "xmark" : "trash")
+                        .frame(width: 22, height: 22)
+                }
+                .cozyIconButton(size: CozyLayout.hitSize)
+                .contentShape(Rectangle())
+                .help(isConfirmingDelete ? "Cancel delete" : "Delete countdown")
+                .accessibilityLabel("Delete \(event.title)")
+            }
+            if isConfirmingDelete {
+                deleteConfirmation
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if isEditing {
+                editPanel
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if savedEditFeedback {
+                Label(savedEditText, systemImage: savedEditAlertCount == 0 ? "bell.slash.fill" : "checkmark.circle.fill")
+                    .font(CozyType.captionStrong)
+                    .foregroundStyle(savedEditAlertCount == 0 ? CozyPalette.persimmon : CozyPalette.focusJade)
+                    .transition(.opacity)
+            }
+            Text(event.title)
+                .font(CozyType.cardTitle)
+                .lineLimit(2)
+            Text(daysText)
+                .font(CozyType.metric)
+                .foregroundStyle(daysColor)
+            Text(phaseMicrocopy(phase))
+                .font(CozyType.controlStrong)
+                .foregroundStyle(.secondary)
+            CozyLinearProgressBar(value: event.progress(), color: daysColor)
+                .accessibilityLabel("Countdown progress")
+                .accessibilityValue("\(Int(event.progress() * 100)) percent")
+            CountdownMilestoneRail(days: event.daysRemaining(), color: daysColor)
+            CountdownPrepPrompt(event: event, phase: phase)
+            if phase.isOverdue {
+                CountdownRecoveryActions(event: event)
+            }
+
+            CozyDisclosureSection(title: "Milestones and dates", symbolName: "calendar", isExpanded: $showingDetails) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("Started \(CozyFormatters.shortDate.string(from: event.createdAt))", systemImage: "flag.fill")
+                        Spacer()
+                        Label(CozyFormatters.shortDate.string(from: event.targetDate), systemImage: "party.popper.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    if !event.notes.isEmpty {
+                        Text(event.notes)
+                            .font(.callout)
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .cozyCard()
+        .onAppear(perform: syncDraft)
+        .onChange(of: event) {
+            if !isEditing {
+                syncDraft()
+            }
+        }
+        .accessibilityIdentifier("countdown.card")
+    }
+
+    private var daysText: String {
+        let days = event.daysRemaining()
+        if days == 0 { return "Today" }
+        if days > 0 { return "\(days) days" }
+        return "\(abs(days)) days ago"
+    }
+
+    private var daysColor: Color {
+        event.daysRemaining() < 0 ? CozyPalette.overdue : CozyPalette.countdownBerry
+    }
+
+    private var deleteConfirmation: some View {
+        HStack(spacing: 10) {
+            Label("Delete this countdown?", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(CozyPalette.overdue)
+            Spacer()
+            Button("Keep") {
+                withAnimation(.snappy(duration: 0.18)) {
+                    isConfirmingDelete = false
+                }
+            }
+            .cozyGhostButton(minWidth: 64)
+            Button(role: .destructive) {
+                deleteCountdown()
+                CozyFeedback.play(.delete)
+            } label: {
+                Text("Delete")
+            }
+            .cozyDestructiveButton(minWidth: 76)
+            .accessibilityIdentifier("countdown.delete.confirm")
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(CozyPalette.overdue.opacity(0.08))
+        )
+        .accessibilityIdentifier("countdown.delete.prompt")
+    }
+
+    private var reminderStatus: some View {
+        Label(event.remindersEnabled ? "Alerts on" : "Visual only", systemImage: event.remindersEnabled ? "bell.badge.fill" : "eye.fill")
+            .font(CozyType.captionStrong)
+            .foregroundStyle(event.remindersEnabled ? CozyPalette.focusJade : .secondary)
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(
+                Capsule(style: .continuous)
+                    .fill((event.remindersEnabled ? CozyPalette.softMint : CozyPalette.lavenderMist).opacity(0.55))
+            )
+            .accessibilityIdentifier("countdown.reminder.status")
+    }
+
+    private var editPanel: some View {
+        VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                    editTitleField
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                        editDateField
+                        editReminderToggle
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+                    editTitleField
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                        editDateField
+                        editReminderToggle
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            CozyLabeledControl(title: "Notes", symbolName: "note.text", minWidth: 260) {
+                TextField("Tiny prep note...", text: $draftNotes)
+                    .cozyTextInput(minWidth: 260, alignment: .leading)
+                    .accessibilityIdentifier("countdown.edit.notes")
+            }
+            HStack(spacing: 8) {
+                CozyFieldHint(text: editHelpText, isError: !canSaveEdit)
+                Spacer()
+                Button("Cancel") {
+                    withAnimation(.snappy(duration: 0.18)) {
+                        syncDraft()
+                        isEditing = false
+                    }
+                }
+                .cozyGhostButton(minWidth: 76)
+                Button {
+                    saveEdit()
+                } label: {
+                    Label("Save", systemImage: "checkmark")
+                }
+                .cozyPrimaryButton(minWidth: 92)
+                .disabled(!canSaveEdit)
+                .accessibilityIdentifier("countdown.edit.save")
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(CozyPalette.quietContainer(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(CozyPalette.neutralBorder, lineWidth: 1)
+                )
+        )
+        .accessibilityIdentifier("countdown.edit.panel")
+    }
+
+    private var editTitleField: some View {
+        CozyLabeledControl(title: "Name", symbolName: "hourglass", minWidth: 220) {
+            TextField("Countdown name", text: $draftTitle)
+                .cozyTextInput(minWidth: 220, alignment: .leading)
+                .accessibilityIdentifier("countdown.edit.title")
+        }
+    }
+
+    private var editDateField: some View {
+        CozyLabeledControl(title: "Date", symbolName: "calendar") {
+            CozyDateInput(date: $draftDate)
+                .accessibilityIdentifier("countdown.edit.date")
+        }
+    }
+
+    private var editReminderToggle: some View {
+        CozyLabeledControl(title: "Alerts", symbolName: "bell.badge", minWidth: 190) {
+            CozyToggleRow(
+                title: "Countdown reminders",
+                symbolName: "bell.badge",
+                subtitle: "7d, 1d, day-of",
+                isOn: $draftRemindersEnabled
+            )
+            .accessibilityIdentifier("countdown.edit.reminders")
+        }
+    }
+
+    private func deleteCountdown() {
+        let eventID = event.id
+        dataStore.deleteCountdown(id: eventID)
+        Task { await notifications.cancelCountdownNotifications(for: eventID) }
+    }
+
+    private var cleanDraftTitle: String {
+        draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSaveEdit: Bool {
+        !cleanDraftTitle.isEmpty
+            && Calendar.autoupdatingCurrent.startOfDay(for: draftDate) >= Calendar.autoupdatingCurrent.startOfDay(for: Date())
+    }
+
+    private var editHelpText: String {
+        if cleanDraftTitle.isEmpty { return "Name the countdown before saving." }
+        if !canSaveEdit { return "Pick today or a future date." }
+        return draftRemindersEnabled ? "Alerts will be rescheduled after saving." : "Saved as a visual countdown."
+    }
+
+    private func syncDraft() {
+        draftTitle = event.title
+        draftDate = event.targetDate
+        draftNotes = event.notes
+        draftRemindersEnabled = event.remindersEnabled
+    }
+
+    private func saveEdit() {
+        guard canSaveEdit else { return }
+        let updated = CountdownEvent(
+            id: event.id,
+            title: cleanDraftTitle,
+            targetDate: draftDate,
+            createdAt: event.createdAt,
+            themeName: event.themeName,
+            stickerName: event.stickerName,
+            notes: draftNotes.trimmingCharacters(in: .whitespacesAndNewlines),
+            remindersEnabled: draftRemindersEnabled
+        )
+        dataStore.updateCountdown(updated)
+            Task {
+                let scheduledCount: Int
+                if updated.remindersEnabled {
+                    scheduledCount = await notifications.scheduleCountdownMilestones(for: updated)
+                } else {
+                    await notifications.cancelCountdownNotifications(for: updated.id)
+                    scheduledCount = -1
+                }
+                await MainActor.run {
+                    savedEditAlertCount = scheduledCount
+                    if updated.remindersEnabled && scheduledCount == 0 {
+                        dataStore.updateCountdown(withID: updated.id, remindersEnabled: false)
+                    }
+                }
+            }
+        CozyFeedback.play(.complete)
+        withAnimation(.snappy(duration: 0.18)) {
+            isEditing = false
+            savedEditFeedback = true
+        }
+    }
+
+    private var savedEditText: String {
+        guard let savedEditAlertCount else {
+            return event.remindersEnabled ? "Countdown updated" : "Countdown updated"
+        }
+        if savedEditAlertCount > 0 { return "Countdown updated with \(savedEditAlertCount) alerts" }
+        if savedEditAlertCount == 0 { return "Countdown updated. Alerts need notification permission." }
+        return "Countdown updated"
+    }
+
+    private func phaseMicrocopy(_ phase: CountdownPhase) -> String {
+        switch phase {
+        case .longRange:
+            return "Dream board mode. One tiny prep note is enough."
+        case .warmingUp:
+            return "Prep season. Make the next step cute and small."
+        case .finalWeek:
+            return "Final sparkle week. Pick one setup task today."
+        case .tomorrow:
+            return "Pack the tiny bag. Future you gets the assist."
+        case .today:
+            return "It’s happening. Celebrate, then save one memory."
+        case .overdue:
+            return "Soft reset. Reschedule, finish, or let it go."
+        }
+    }
+}
+
+struct CountdownRecoveryActions: View {
+    @EnvironmentObject private var dataStore: AppDataStore
+    @EnvironmentObject private var notifications: NotificationService
+    @State private var confirmingLetGo = false
+    @State private var addedResetTaskID: UUID?
+    let event: CountdownEvent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    recoveryButtons
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    recoveryButtons
+                }
+            }
+            if confirmingLetGo {
+                HStack(spacing: 8) {
+                    Text("Remove this countdown?")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Keep") {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            confirmingLetGo = false
+                        }
+                    }
+                    .cozyGhostButton(minWidth: 64)
+                    Button(role: .destructive) {
+                        let eventID = event.id
+                        dataStore.deleteCountdown(id: eventID)
+                        Task { await notifications.cancelCountdownNotifications(for: eventID) }
+                        CozyFeedback.play(.delete)
+                    } label: {
+                        Text("Delete")
+                    }
+                    .cozyDestructiveButton(minWidth: 76)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(CozyPalette.overdue.opacity(0.08))
+                )
+                .transition(.opacity)
+            }
+            if addedResetTaskID != nil {
+                Text("Reset task added")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(CozyPalette.focusJade)
+                    .transition(.opacity)
+            }
+        }
+        .accessibilityIdentifier("countdown.recovery")
+        .onAppear(perform: syncExistingResetTask)
+    }
+
+    @ViewBuilder
+    private var recoveryButtons: some View {
+        Button {
+            reschedule(days: 1)
+            CozyFeedback.play(.undo)
+        } label: {
+            Label("Move to tomorrow", systemImage: "calendar.badge.plus")
+        }
+        .cozySecondaryButton(minWidth: 160)
+
+        Button {
+            addResetTask()
+            CozyFeedback.play(.add)
+        } label: {
+            Label(addedResetTaskID == nil ? "Add reset task" : "Reset task added", systemImage: addedResetTaskID == nil ? "arrow.clockwise" : "checkmark.circle.fill")
+        }
+        .cozySecondaryButton(minWidth: 150)
+        .disabled(addedResetTaskID != nil)
+
+        Button(role: .destructive) {
+            withAnimation(.snappy(duration: 0.18)) {
+                confirmingLetGo.toggle()
+            }
+        } label: {
+            Label("Let go", systemImage: "trash")
+        }
+        .cozyDestructiveButton(minWidth: 96)
+    }
+
+    private func reschedule(days: Int) {
+        let targetDate = Calendar.autoupdatingCurrent.date(byAdding: .day, value: days, to: Date()) ?? Date()
+        dataStore.rescheduleCountdown(id: event.id, to: targetDate)
+        let updated = CountdownEvent(
+            id: event.id,
+            title: event.title,
+            targetDate: targetDate,
+            createdAt: event.createdAt,
+            themeName: event.themeName,
+            stickerName: event.stickerName,
+            notes: event.notes,
+            remindersEnabled: event.remindersEnabled
+        )
+            Task {
+                let scheduledCount: Int
+                if updated.remindersEnabled {
+                    scheduledCount = await notifications.scheduleCountdownMilestones(for: updated)
+                } else {
+                    await notifications.cancelCountdownNotifications(for: updated.id)
+                    scheduledCount = -1
+                }
+                await MainActor.run {
+                    if updated.remindersEnabled && scheduledCount == 0 {
+                        dataStore.updateCountdown(withID: updated.id, remindersEnabled: false)
+                    }
+                }
+            }
+    }
+
+    private func addResetTask() {
+        let title = "Reset \(event.title)"
+        if let existingID = existingTaskID(title: title, tag: "reset") {
+            withAnimation(.snappy(duration: 0.18)) {
+                addedResetTaskID = existingID
+            }
+            return
+        }
+        let task = TaskItem(title: title, dueDate: Date(), priority: 1, tagText: "reset", estimatedMinutes: 15)
+        dataStore.addTask(task)
+        withAnimation(.snappy(duration: 0.18)) {
+            addedResetTaskID = task.id
+        }
+    }
+
+    private func syncExistingResetTask() {
+        addedResetTaskID = existingTaskID(title: "Reset \(event.title)", tag: "reset")
+    }
+
+    private func existingTaskID(title: String, tag: String) -> UUID? {
+        dataStore.tasks.first { task in
+            !task.isCompleted
+                && task.title == title
+                && task.tagText == tag
+                && CozyCalendar.isToday(task.dueDate)
+        }?.id
+    }
+}
+
+struct CountdownCompactCard: View {
+    @EnvironmentObject private var dataStore: AppDataStore
+    @State private var addedPrepTaskID: UUID?
+    let event: CountdownEvent
+
+    var body: some View {
+        let phase = event.phase()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                CountdownStickerFrame(event: event, phase: phase)
+                    .frame(width: 54, height: 54)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(compactPhaseTitle(phase))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(event.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                    Text(event.daysRemaining() == 0 ? "Today" : "\(event.daysRemaining()) days left")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(countdownColor)
+                }
+                Spacer()
+            }
+            Button {
+                addPrepTask()
+            } label: {
+                Label(addedPrepTaskID == nil ? "Add tiny prep task" : "Prep task added", systemImage: addedPrepTaskID == nil ? "plus.circle.fill" : "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .cozySecondaryButton(fullWidth: true)
+            .disabled(addedPrepTaskID != nil)
+            .accessibilityIdentifier("countdown.compact.prep")
+        }
+        .compactDashboardTile()
+        .cozyCard()
+        .cozyPressable()
+        .onAppear(perform: syncExistingPrepTask)
+    }
+
+    private var countdownColor: Color {
+        event.daysRemaining() < 0 ? CozyPalette.overdue : CozyPalette.countdownBerry
+    }
+
+    private func compactPhaseTitle(_ phase: CountdownPhase) -> String {
+        switch phase {
+        case .longRange: "Dreaming toward"
+        case .warmingUp: "Prep season"
+        case .finalWeek: "Final week prep"
+        case .tomorrow: "Tomorrow’s main thing"
+        case .today: "Happening today"
+        case .overdue: "Soft reset"
+        }
+    }
+
+    private func addPrepTask() {
+        let phase = event.phase()
+        let title = prepPrompt(for: event, phase: phase)
+        if let existingID = existingTaskID(title: title, tag: "prep") {
+            addedPrepTaskID = existingID
+            return
+        }
+        let task = TaskItem(title: title, dueDate: Date(), priority: 1, tagText: "prep", estimatedMinutes: 15)
+        dataStore.addTask(task)
+        addedPrepTaskID = task.id
+        CozyFeedback.play(.add)
+    }
+
+    private func syncExistingPrepTask() {
+        addedPrepTaskID = existingTaskID(title: prepPrompt(for: event, phase: event.phase()), tag: "prep")
+    }
+
+    private func existingTaskID(title: String, tag: String) -> UUID? {
+        dataStore.tasks.first { task in
+            !task.isCompleted
+                && task.title == title
+                && task.tagText == tag
+                && CozyCalendar.isToday(task.dueDate)
+        }?.id
+    }
+}
+
+struct CountdownStickerFrame: View {
+    @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
+    let event: CountdownEvent
+    let phase: CountdownPhase
+
+    private var theme: CozyTheme {
+        CozyTheme.named(event.themeName.isEmpty ? selectedTheme : event.themeName)
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(stickerFill.opacity(phase == .today ? 0.24 : 0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(stickerColor.opacity(phase == .today ? 0.62 : 0.30), lineWidth: 1)
+                )
+            Image(systemName: event.stickerName)
+                .font(.title.weight(.bold))
+                .foregroundStyle(phase.isOverdue ? CozyPalette.overdue : stickerColor)
+        }
+        .frame(width: 56, height: 56)
+        .accessibilityHidden(true)
+    }
+
+    private var stickerColor: Color {
+        phase == .today ? theme.reward : CozyPalette.countdownBerry
+    }
+
+    private var stickerFill: Color {
+        phase == .today ? CozyPalette.peach : CozyPalette.lavenderMist
+    }
+}
+
+struct CountdownPhaseBadge: View {
+    let phase: CountdownPhase
+    let color: Color
+
+    var body: some View {
+        Text(phase.label)
+            .font(.caption.weight(.bold))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(color.opacity(0.16)))
+            .foregroundStyle(color)
+    }
+}
+
+struct CountdownMilestoneRail: View {
+    let days: Int
+    let color: Color
+
+    private let milestones = [30, 14, 7, 3, 1, 0]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(milestones, id: \.self) { milestone in
+                let reached = days <= milestone && days >= 0
+                Image(systemName: reached ? "star.circle.fill" : "circle")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(reached ? color : .secondary.opacity(0.55))
+                    .accessibilityLabel(reached ? "\(milestone) day milestone reached" : "\(milestone) day milestone")
+            }
+        }
+        .accessibilityIdentifier("countdown.milestones")
+    }
+}
+
+struct CountdownPrepPrompt: View {
+    @EnvironmentObject private var dataStore: AppDataStore
+    @State private var addedTaskID: UUID?
+    @State private var addedTaskWasCreatedHere = false
+    let event: CountdownEvent
+    let phase: CountdownPhase
+
+    private var didAddTask: Bool {
+        addedTaskID != nil
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "wand.and.stars")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(prepPrompt(for: event, phase: phase))
+                    .font(.callout.weight(.bold))
+                    .lineLimit(2)
+                Text("Turn anticipation into one 15m prep block.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if didAddTask {
+                    Text("Prep task added")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
+                }
+            }
+            Spacer()
+            Button {
+                didAddTask ? undoPrepTask() : addPrepTask()
+            } label: {
+                Image(systemName: didAddTask ? "arrow.uturn.backward" : "plus")
+                    .frame(width: 18, height: 18)
+            }
+            .cozyIconButton(size: CozyLayout.hitSize)
+            .accessibilityLabel(didAddTask ? "Undo prep task for \(event.title)" : "Add prep task for \(event.title)")
+            .accessibilityIdentifier(didAddTask ? "countdown.prep.undo" : "countdown.prep.add")
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    private func addPrepTask() {
+        let title = prepPrompt(for: event, phase: phase)
+        if let existingID = existingTaskID(title: title, tag: "prep") {
+            withAnimation(.snappy(duration: 0.18)) {
+                addedTaskID = existingID
+                addedTaskWasCreatedHere = false
+            }
+            return
+        }
+        let task = TaskItem(title: title, dueDate: Date(), priority: 1, tagText: "prep", estimatedMinutes: 15)
+        dataStore.addTask(task)
+        withAnimation(.snappy(duration: 0.18)) {
+            addedTaskID = task.id
+            addedTaskWasCreatedHere = true
+        }
+        CozyFeedback.play(.add)
+    }
+
+    private func undoPrepTask() {
+        guard let taskID = addedTaskID else { return }
+        let shouldDeleteTask = addedTaskWasCreatedHere
+        if shouldDeleteTask {
+            dataStore.deleteTask(id: taskID)
+        }
+        withAnimation(.snappy(duration: 0.18)) {
+            addedTaskID = nil
+            addedTaskWasCreatedHere = false
+        }
+        if shouldDeleteTask {
+            CozyFeedback.play(.undo)
+        }
+    }
+
+    private func existingTaskID(title: String, tag: String) -> UUID? {
+        dataStore.tasks.first { task in
+            !task.isCompleted
+                && task.title == title
+                && task.tagText == tag
+                && CozyCalendar.isToday(task.dueDate)
+        }?.id
+    }
+}
+
+private func prepPrompt(for event: CountdownEvent, phase: CountdownPhase) -> String {
+    let title = event.title.lowercased()
+    if title.contains("exam") || title.contains("study") || title.contains("test") {
+        return phase == .today ? "Review one calm page" : "Do a 15m recall block"
+    }
+    if title.contains("trip") || title.contains("flight") || title.contains("travel") {
+        return phase == .today ? "Check the tiny travel list" : "Make a mini packing list"
+    }
+    if title.contains("birthday") || title.contains("party") {
+        return "Pick a card or message"
+    }
+    if title.contains("release") || title.contains("deadline") || title.contains("ship") {
+        return phase == .today ? "Ship one tiny slice" : "Prepare one release note"
+    }
+    switch phase {
+    case .today:
+        return "Save one tiny memory"
+    case .overdue:
+        return "Choose reset, done, or delete"
+    default:
+        return "Add one tiny prep step"
+    }
+}
+
+struct CalendarPlannerView: View {
+    @EnvironmentObject private var dataStore: AppDataStore
+    @State private var dayOffset = -7
+    @State private var selectedDay: SelectedCalendarDay?
+
+    private let weekColumns = Array(repeating: GridItem(.flexible(minimum: 118), spacing: 10), count: 7)
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
+                SectionHeader(title: "Calendar", subtitle: "Two quiet weeks of tasks, countdowns, and focus diary.", mascotState: .countdown)
+                calendarControls
+                ViewThatFits(in: .horizontal) {
+                    LazyVGrid(columns: weekColumns, spacing: 10) {
+                        calendarCards
+                    }
+                    LazyVGrid(columns: CozyLayout.adaptiveColumns(minimum: 180), spacing: 10) {
+                        calendarCards
+                    }
+                }
+            }
+            .cozyPageFrame()
+        }
+        .sheet(item: $selectedDay) { selection in
+            CalendarDayDetailSheet(date: selection.date)
+                .environmentObject(dataStore)
+        }
+        .accessibilityIdentifier("screen.calendar")
+    }
+
+    private var calendarControls: some View {
+        HStack(spacing: 10) {
+            Button {
+                dayOffset -= 7
+            } label: {
+                Label("Back", systemImage: "chevron.left")
+            }
+            .cozySecondaryButton(minWidth: 92)
+
+            Button {
+                dayOffset = -7
+            } label: {
+                Label("Today", systemImage: "calendar")
+            }
+            .cozySecondaryButton(minWidth: 96)
+
+            Button {
+                dayOffset += 7
+            } label: {
+                Label("Next", systemImage: "chevron.right")
+            }
+            .cozySecondaryButton(minWidth: 92)
+
+            Spacer()
+
+            Text(visibleRangeText)
+                .font(CozyType.controlStrong)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var calendarCards: some View {
+        ForEach(visibleDays, id: \.self) { day in
+            CalendarDayCard(
+                date: day,
+                tasks: tasksForDay(day),
+                countdowns: countdownsForDay(day),
+                focusSessions: focusSessionsForDay(day)
+            ) {
+                selectedDay = SelectedCalendarDay(date: day)
+            }
+        }
+    }
+
+    private var visibleRangeText: String {
+        guard let first = visibleDays.first, let last = visibleDays.last else { return "" }
+        return "\(CozyFormatters.shortDate.string(from: first)) - \(CozyFormatters.shortDate.string(from: last))"
+    }
+
+    private var visibleDays: [Date] {
+        let calendar = Calendar.autoupdatingCurrent
+        let today = calendar.startOfDay(for: Date())
+        guard let start = calendar.date(byAdding: .day, value: dayOffset, to: today) else { return [] }
+        return (0..<14).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+    }
+
+    private struct SelectedCalendarDay: Identifiable {
+        let id = UUID()
+        let date: Date
+    }
+
+    private func tasksForDay(_ day: Date) -> [TaskItem] {
+        dataStore.tasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return Calendar.autoupdatingCurrent.isDate(dueDate, inSameDayAs: day)
+        }
+    }
+
+    private func countdownsForDay(_ day: Date) -> [CountdownEvent] {
+        dataStore.countdowns.filter { Calendar.autoupdatingCurrent.isDate($0.targetDate, inSameDayAs: day) }
+    }
+
+    private func focusSessionsForDay(_ day: Date) -> [FocusSession] {
+        dataStore.focusSessions
+            .filter { session in
+                Calendar.autoupdatingCurrent.isDate(session.reportingDate, inSameDayAs: day)
+            }
+            .sorted { first, second in
+                first.reportingDate > second.reportingDate
+            }
+    }
+}
+
+struct CalendarDayCard: View {
+    let date: Date
+    let tasks: [TaskItem]
+    let countdowns: [CountdownEvent]
+    let focusSessions: [FocusSession]
+    let onOpen: () -> Void
+
+    private var visibleTasks: [TaskItem] {
+        Array(tasks.prefix(1))
+    }
+
+    private var visibleCountdowns: [CountdownEvent] {
+        Array(countdowns.prefix(1))
+    }
+
+    private var visibleFocusSessions: [FocusSession] {
+        Array(focusSessions.prefix(2))
+    }
+
+    private var hiddenCount: Int {
+        max(0, tasks.count - visibleTasks.count)
+            + max(0, countdowns.count - visibleCountdowns.count)
+            + max(0, focusSessions.count - visibleFocusSessions.count)
+    }
+
+    private var focusMinutes: Int {
+        focusSessions.reduce(0) { $0 + $1.completedMinutes }
+    }
+
+    private var hasContent: Bool {
+        !tasks.isEmpty || !countdowns.isEmpty || !focusSessions.isEmpty
+    }
+
+    var body: some View {
+        Button {
+            onOpen()
+        } label: {
+            cardContent
+        }
+        .cozyPressable()
+        .accessibilityIdentifier("calendar.day.open")
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(CozyFormatters.dayName.string(from: date))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("\(Calendar.autoupdatingCurrent.component(.day, from: date))")
+                        .font(.title2.weight(.bold))
+                }
+                Spacer(minLength: 6)
+                if focusMinutes > 0 {
+                    Text("\(focusMinutes)m")
+                        .font(.caption.weight(.bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(CozyPalette.focusJade.opacity(0.12)))
+                        .foregroundStyle(CozyPalette.focusJade)
+                }
+            }
+
+            if !hasContent {
+                Text("Open day")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            ForEach(visibleFocusSessions) { session in
+                CalendarDayLine(
+                    title: "\(session.completedMinutes)m \(session.taskTitle)",
+                    symbol: "timer",
+                    color: CozyPalette.focusJade
+                )
+                let note = session.moodNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !note.isEmpty {
+                    CalendarDayLine(title: note, symbol: "quote.bubble.fill", color: CozyPalette.habitLavender)
+                }
+            }
+            ForEach(visibleTasks) { task in
+                CalendarDayLine(
+                    title: task.title,
+                    symbol: task.isCompleted ? "checkmark.circle.fill" : "circle",
+                    color: task.isCompleted ? CozyPalette.focusJade : CozyPalette.berry
+                )
+            }
+            ForEach(visibleCountdowns) { event in
+                CalendarDayLine(title: event.title, symbol: event.stickerName, color: CozyCountdownColor.color(for: event))
+            }
+            if hiddenCount > 0 {
+                Text("+\(hiddenCount) more")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 162, alignment: .topLeading)
+        .cozyCard()
+    }
+}
+
+struct CalendarDayDetailSheet: View {
+    @EnvironmentObject private var dataStore: AppDataStore
+    @Environment(\.dismiss) private var dismiss
+    let date: Date
+
+    private var tasks: [TaskItem] {
+        dataStore.tasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return Calendar.autoupdatingCurrent.isDate(dueDate, inSameDayAs: date)
+        }
+    }
+
+    private var countdowns: [CountdownEvent] {
+        dataStore.countdowns.filter { Calendar.autoupdatingCurrent.isDate($0.targetDate, inSameDayAs: date) }
+    }
+
+    private var focusSessions: [FocusSession] {
+        dataStore.focusSessions
+            .filter { Calendar.autoupdatingCurrent.isDate($0.reportingDate, inSameDayAs: date) }
+            .sorted { $0.reportingDate > $1.reportingDate }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(CozyFormatters.weekdayDate.string(from: date))
+                        .font(CozyType.cardTitle)
+                    Text("\(focusMinutes)m focus · \(tasks.count) tasks · \(countdowns.count) countdowns")
+                        .font(CozyType.control)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .cozySecondaryButton(minWidth: 82)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    diarySection(title: "Focus diary", symbol: "timer", empty: "No focus sessions logged.", isEmpty: focusSessions.isEmpty) {
+                        ForEach(focusSessions) { session in
+                            CalendarDetailRow(
+                                title: "\(session.completedMinutes)m \(session.taskTitle)",
+                                subtitle: session.moodNote.isEmpty ? "Saved focus session" : session.moodNote,
+                                symbol: "timer",
+                                color: CozyPalette.focusJade
+                            )
+                        }
+                    }
+                    diarySection(title: "Tasks", symbol: "checklist", empty: "No tasks due.", isEmpty: tasks.isEmpty) {
+                        ForEach(tasks) { task in
+                            CalendarDetailRow(
+                                title: task.title,
+                                subtitle: task.isCompleted ? "Done" : "\(task.listName) · \(task.estimatedMinutes)m",
+                                symbol: task.isCompleted ? "checkmark.circle.fill" : "circle",
+                                color: task.isCompleted ? CozyPalette.focusJade : CozyPalette.berry
+                            )
+                        }
+                    }
+                    diarySection(title: "Countdowns", symbol: "hourglass", empty: "No countdowns on this day.", isEmpty: countdowns.isEmpty) {
+                        ForEach(countdowns) { event in
+                            CalendarDetailRow(
+                                title: event.title,
+                                subtitle: event.phase().label,
+                                symbol: event.stickerName,
+                                color: CozyCountdownColor.color(for: event)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 520, height: 580)
+    }
+
+    private var focusMinutes: Int {
+        focusSessions.reduce(0) { $0 + $1.completedMinutes }
+    }
+
+    @ViewBuilder
+    private func diarySection<Content: View>(
+        title: String,
+        symbol: String,
+        empty: String,
+        isEmpty: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: symbol)
+                .font(CozyType.controlStrong)
+            if isEmpty {
+                Text(empty)
+                    .font(CozyType.captionStrong)
+                    .foregroundStyle(.secondary)
+            } else {
+                content()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cozyCard()
+    }
+}
+
+private struct CalendarDetailRow: View {
+    let title: String
+    let subtitle: String
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.callout.weight(.bold))
+                .foregroundStyle(color)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(CozyType.controlStrong)
+                    .lineLimit(2)
+                Text(subtitle)
+                    .font(CozyType.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(color.opacity(0.08))
+        )
+    }
+}
+
+private struct CalendarDayLine: View {
+    let title: String
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        Label {
+            Text(title)
+                .lineLimit(1)
+        } icon: {
+            Image(systemName: symbol)
+                .font(.caption2.weight(.bold))
+                .frame(width: 14, alignment: .center)
+        }
+        .font(.caption)
+        .foregroundStyle(color)
+    }
+}
+
+private enum CozyCountdownColor {
+    static func color(for event: CountdownEvent) -> Color {
+        event.daysRemaining() < 0 ? CozyPalette.overdue : CozyPalette.countdownBerry
+    }
+}

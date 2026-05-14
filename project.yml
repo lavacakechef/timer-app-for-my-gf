@@ -1,0 +1,108 @@
+name: CozyTime
+options:
+  minimumXcodeGenVersion: 2.45.0
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: NO
+targets:
+  CozyCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/CozyCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.local.cozytime.core
+        GENERATE_INFOPLIST_FILE: YES
+
+  CozyTime:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/CozyTime
+        excludes:
+          - AppDataStore.swift
+      - path: XcodeSupport/CozyTime/SwiftDataAppDataStore.swift
+      - path: XcodeSupport/CozyTime/Assets.xcassets
+        buildPhase: resources
+    resources:
+      - path: Sources/CozyTime/Resources/PrivacyInfo.xcprivacy
+    dependencies:
+      - target: CozyCore
+    entitlements:
+      path: Packaging/CozyTime.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.local.cozytime
+        PRODUCT_NAME: CozyTime
+        INFOPLIST_FILE: XcodeSupport/CozyTime/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.2.0
+        CODE_SIGN_ENTITLEMENTS: Packaging/CozyTime.entitlements
+      configs:
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
+
+  CozyTimeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/CozyCoreTests
+      - path: XcodeTests/CozyTimeTests
+    dependencies:
+      - target: CozyCore
+      - target: CozyTime
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.local.cozytime.tests
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_HARDENED_RUNTIME: NO
+
+  CozyTimeUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: XcodeTests/CozyTimeUITests
+    dependencies:
+      - target: CozyTime
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.local.cozytime.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_HARDENED_RUNTIME: NO
+
+schemes:
+  CozyTime:
+    build:
+      targets:
+        CozyCore: all
+        CozyTime: all
+        CozyTimeTests: [test]
+        CozyTimeUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      testPlans:
+        - path: Release.xctestplan
+          defaultPlan: true
+      targets:
+        - CozyTimeTests
+        - CozyTimeUITests
+    archive:
+      config: Release
+    profile:
+      config: Release
+    analyze:
+      config: Debug

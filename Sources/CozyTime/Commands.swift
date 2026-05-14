@@ -1,0 +1,52 @@
+import CozyCore
+import SwiftUI
+
+struct CozyCommands: Commands {
+    let timerStore: FocusTimerStore
+    let notifications: NotificationService
+
+    var body: some Commands {
+        CommandMenu("Focus") {
+            Button("Start 25-Min Focus") {
+                timerStore.start(taskTitle: "Quick focus", duration: 25 * 60)
+                scheduleFocusCompletion()
+            }
+            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .disabled(!timerStore.canStartNewSession)
+
+            Button(timerStore.isRunning ? "Pause Focus" : "Resume Focus") {
+                if timerStore.isRunning {
+                    timerStore.pause()
+                    Task { await notifications.cancelFocusNotifications() }
+                } else if timerStore.isPaused {
+                    timerStore.resume()
+                    scheduleFocusCompletion()
+                }
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .disabled(!timerStore.isActive)
+
+            Button("End Focus Gently") {
+                timerStore.cancel()
+                Task { await notifications.cancelFocusNotifications() }
+            }
+            .keyboardShortcut(".", modifiers: [.command, .shift])
+            .disabled(!timerStore.isActive)
+        }
+    }
+
+    private func scheduleFocusCompletion() {
+        guard let startDate = timerStore.snapshot.startDate else { return }
+        let draft = NotificationPlanner.focusCompletion(
+            sessionID: UUID(),
+            taskTitle: timerStore.activeTaskTitle,
+            startDate: startDate,
+            duration: timerStore.snapshot.duration,
+            accumulatedPause: timerStore.snapshot.accumulatedPause
+        )
+        Task {
+            await notifications.cancelFocusNotifications()
+            await notifications.schedule(draft)
+        }
+    }
+}
