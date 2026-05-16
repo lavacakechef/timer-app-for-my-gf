@@ -21,8 +21,9 @@ fi
 ARCHIVE_PATH="$ROOT_DIR/.build/xcode/CozyTime.xcarchive"
 EXPORT_DIR="$ROOT_DIR/.build/xcode/export"
 ZIP_PATH="$ROOT_DIR/.build/xcode/CozyTime-unsigned-xcode.zip"
+FRIEND_ZIP_PATH="${COZYTIME_FRIEND_ZIP_PATH:-$HOME/Desktop/CozyTime-for-friend.zip}"
 
-rm -rf "$ARCHIVE_PATH" "$EXPORT_DIR" "$ZIP_PATH"
+rm -rf "$ARCHIVE_PATH" "$EXPORT_DIR" "$ZIP_PATH" "$FRIEND_ZIP_PATH"
 mkdir -p "$EXPORT_DIR"
 
 xcodebuild \
@@ -49,8 +50,11 @@ if [[ "$ARCH_LINE" != *"arm64"* ]]; then
 fi
 
 /usr/bin/ditto -c -k --norsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+mkdir -p "$(dirname "$FRIEND_ZIP_PATH")"
+cp "$ZIP_PATH" "$FRIEND_ZIP_PATH"
 
 echo "Archive: $ARCHIVE_PATH"
 echo "App:     $APP_PATH"
 echo "Zip:     $ZIP_PATH"
+echo "Friend:  $FRIEND_ZIP_PATH"
 echo "Arch:    $ARCH_LINE"

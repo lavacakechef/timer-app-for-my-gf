@@ -51,6 +51,45 @@ final class SwiftDataMigrationTests: XCTestCase {
         XCTAssertEqual(store.tasks.first?.tagText, "migration")
     }
 
+    func testMigratesLegacyJSONThatDoesNotHaveBonusPaws() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CozyTimeLegacyBonusPawsTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let legacyURL = tempDirectory.appendingPathComponent("CozyTimeData.json")
+        let json = """
+        {
+          "countdowns": [],
+          "focusSessions": [],
+          "habits": [],
+          "rewards": [],
+          "tasks": [
+            {
+              "completedAt": null,
+              "createdAt": "2026-05-17T00:00:00Z",
+              "dueDate": null,
+              "estimatedMinutes": 25,
+              "id": "00000000-0000-0000-0000-000000000202",
+              "listName": "Inbox",
+              "notes": "Old app data",
+              "priority": 1,
+              "repeatRule": "",
+              "tagText": "legacy",
+              "title": "Legacy task survives"
+            }
+          ]
+        }
+        """
+        try Data(json.utf8).write(to: legacyURL, options: [.atomic])
+
+        let container = try CozySwiftDataSchema.makeContainer(inMemory: true)
+        let store = AppDataStore(container: container, legacyJSONURL: legacyURL)
+
+        XCTAssertEqual(store.tasks.map(\.title), ["Legacy task survives"])
+        XCTAssertEqual(store.database.bonusPaws, UserDefaults.standard.integer(forKey: "cozy.bonusPaws"))
+    }
+
     func testSeedsOnlyWhenStoreAndLegacyJSONAreEmpty() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("CozyTimeSeedTests-\(UUID().uuidString)", isDirectory: true)
@@ -122,6 +161,8 @@ final class SwiftDataMigrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDirectory) }
 
         let container = try CozySwiftDataSchema.makeContainer(inMemory: true)
+        container.mainContext.insert(StoredRewardItem(from: RewardItem(name: "Existing", category: "Sticker", symbolName: "star", colorHex: "#F28C38")))
+        try container.mainContext.save()
         let store = AppDataStore(
             container: container,
             legacyJSONURL: tempDirectory.appendingPathComponent("MissingData.json")
@@ -135,6 +176,50 @@ final class SwiftDataMigrationTests: XCTestCase {
 
         XCTAssertTrue(store.tasks.contains { $0.id == first.id })
         XCTAssertFalse(store.tasks.contains { $0.id == second.id })
+    }
+
+    func testUpdatingHabitPreservesIdentityAndCompletionHistory() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CozyTimeUpdateHabitTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let container = try CozySwiftDataSchema.makeContainer(inMemory: true)
+        container.mainContext.insert(StoredRewardItem(from: RewardItem(name: "Existing", category: "Sticker", symbolName: "star", colorHex: "#F28C38")))
+        try container.mainContext.save()
+        let store = AppDataStore(
+            container: container,
+            legacyJSONURL: tempDirectory.appendingPathComponent("MissingData.json")
+        )
+        let habitID = UUID()
+        let habit = Habit(
+            id: habitID,
+            title: "Read",
+            createdAt: Date(timeIntervalSinceReferenceDate: 10),
+            targetPerWeek: 4,
+            completionKeys: "2026-05-15,2026-05-16",
+            stickerName: "book.fill",
+            graceDays: 1
+        )
+
+        store.addHabit(habit)
+        store.updateHabit(
+            Habit(
+                id: habitID,
+                title: "Read calmly",
+                createdAt: habit.createdAt,
+                targetPerWeek: habit.targetPerWeek,
+                completionKeys: habit.completionKeys,
+                stickerName: habit.stickerName,
+                graceDays: habit.graceDays
+            )
+        )
+
+        XCTAssertEqual(store.habits.count, 1)
+        XCTAssertEqual(store.habits.first?.id, habitID)
+        XCTAssertEqual(store.habits.first?.title, "Read calmly")
+        XCTAssertEqual(store.habits.first?.completionKeys, "2026-05-15,2026-05-16")
+        XCTAssertFalse(store.undoManager.canUndo, "rename/update should not register a delete undo")
     }
 
     func testRepeatedFocusSessionsDoNotDuplicateTheFocusStampReward() throws {

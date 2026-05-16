@@ -20,6 +20,7 @@
 		3575A75AEA7ECD357F55A01B /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9FE1DCEFBAAC030AD418CB /* NotificationService.swift */; };
 		3A555846372635C3C3260D17 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B0EC918D0E99B8D3BD00360 /* RootView.swift */; };
 		3F9AA3D9D4F011271CFA9425 /* mochi-idle.json in Resources */ = {isa = PBXBuildFile; fileRef = 3C60026FAE193D020D047812 /* mochi-idle.json */; };
+		4441728833A425559B66EBD9 /* cozy_action.aiff in Resources */ = {isa = PBXBuildFile; fileRef = 0FF3EAE91C5C3F9A929606B2 /* cozy_action.aiff */; };
 		47F94BCB0BD74DB815DC60E1 /* biscuit-idle.json in Resources */ = {isa = PBXBuildFile; fileRef = 91C6DA7EF5506F5D57448D18 /* biscuit-idle.json */; };
 		48C8C44F4F2BC6F5E9FB52C4 /* mochi-complete.json in Resources */ = {isa = PBXBuildFile; fileRef = CB74B1E5212CD860F60F75E4 /* mochi-complete.json */; };
 		4E1C93E02D0DA9EA288EAC0C /* TaskFiltersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F336E5B220C8A6181F7812B /* TaskFiltersTests.swift */; };
@@ -48,6 +49,8 @@
 		ABE975C734B93CEFC4BBF381 /* biscuit-pause.json in Resources */ = {isa = PBXBuildFile; fileRef = E9E760DC6F618A358F63FD5A /* biscuit-pause.json */; };
 		AC12336409390C2690A550AB /* HabitStatsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6565004D696D2ED5323F3E29 /* HabitStatsViews.swift */; };
 		ACE4997FACE98AF5459630CD /* CozyCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0081C01573582FE68C056226 /* CozyCore.framework */; };
+		B2763572C35B55E48C43F057 /* CozyHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F732C88C5D02DC69E1BA6F6 /* CozyHaptics.swift */; };
+		B68E3C80348B28AB8DF8037D /* cozy_complete.aiff in Resources */ = {isa = PBXBuildFile; fileRef = 8FC5EB698638E5073C9A487B /* cozy_complete.aiff */; };
 		B8C7425C90352C1593CE73BD /* TimerEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FD23B6FD109262F7E1221D7 /* TimerEngineTests.swift */; };
 		BE0D90A7C6D41DD28AAD6700 /* CozyCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0081C01573582FE68C056226 /* CozyCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		BE48EFFB5AC36AEE66614731 /* bao-idle.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A1F3BC7FADAAAB1F1D18E9D /* bao-idle.json */; };
@@ -56,10 +59,13 @@
 		C85191D64F053BB193DEC6DC /* TaskViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 494A69F5E455467346DAF1E0 /* TaskViews.swift */; };
 		C872B352ECEF5985EBA516D6 /* pip-idle.json in Resources */ = {isa = PBXBuildFile; fileRef = EA3A42914FABC12FAAA8C170 /* pip-idle.json */; };
 		CF6518DCAD66F64CFF7CE977 /* TimerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15E086DAC551E8E37619C1D4 /* TimerEngine.swift */; };
+		D1EEE45C3023AB8FB76CB5E4 /* cozy_tick.aiff in Resources */ = {isa = PBXBuildFile; fileRef = 4B76692F2453F9B0827E196F /* cozy_tick.aiff */; };
 		D801169EB609BF3BE3E5B055 /* mochi-pause.json in Resources */ = {isa = PBXBuildFile; fileRef = 918C56E2D5B263BA270CF551 /* mochi-pause.json */; };
 		DBD4284690F4ED7E623C7A92 /* soba-idle.json in Resources */ = {isa = PBXBuildFile; fileRef = 88D009DF8E9B1BEF9F04AB1A /* soba-idle.json */; };
 		DFE6AB041072E410166C20EE /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0337C4528AC60A5EECB3F231 /* DateHelpers.swift */; };
+		E2B16B74C3D89D29C9058495 /* ShortcutsHelpSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A3B07F1B30F0F603D8BD1B /* ShortcutsHelpSheet.swift */; };
 		E52D584B7C9C4728A47EAE1E /* CozyCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0081C01573582FE68C056226 /* CozyCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		EBFE56BF5080D1F385463285 /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3A44918C583E03B6639860 /* Onboarding.swift */; };
 		F245F049FB70DDC6322E8DF1 /* FocusTimerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38F48738DBE86D09FC471464 /* FocusTimerStore.swift */; };
 		F9CBBF86ECCB99F3D19797D9 /* biscuit-complete.json in Resources */ = {isa = PBXBuildFile; fileRef = D9F9D1345BF1461A89F53CD3 /* biscuit-complete.json */; };
 		FDBE3B7CA0C021D94E9823E4 /* tofu-idle.json in Resources */ = {isa = PBXBuildFile; fileRef = A252088DB68E174D8C4F235D /* tofu-idle.json */; };
@@ -126,6 +132,7 @@
 		0081C01573582FE68C056226 /* CozyCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = CozyCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		0337C4528AC60A5EECB3F231 /* DateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateHelpers.swift; sourceTree = "<group>"; };
 		09287F43958291F20322FA60 /* biscuit-sleep.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "biscuit-sleep.json"; sourceTree = "<group>"; };
+		0FF3EAE91C5C3F9A929606B2 /* cozy_action.aiff */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = cozy_action.aiff; sourceTree = "<group>"; };
 		1063D096C8EBE6C2C653CD77 /* CountdownEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownEventTests.swift; sourceTree = "<group>"; };
 		113F5946F3D3C6EC0763C366 /* CozyTimeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CozyTimeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		15E086DAC551E8E37619C1D4 /* TimerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerEngine.swift; sourceTree = "<group>"; };
@@ -139,6 +146,8 @@
 		46AB8279362D9C0A314D04DE /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
 		494A69F5E455467346DAF1E0 /* TaskViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskViews.swift; sourceTree = "<group>"; };
 		4991F7541F0E081303E3FE90 /* CozyTimeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CozyTimeApp.swift; sourceTree = "<group>"; };
+		4B76692F2453F9B0827E196F /* cozy_tick.aiff */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = cozy_tick.aiff; sourceTree = "<group>"; };
+		4E3A44918C583E03B6639860 /* Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
 		515939C58F66280FF021A32F /* biscuit-focus.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "biscuit-focus.json"; sourceTree = "<group>"; };
 		55B959DF413925FFA1A540F6 /* CozyTimeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CozyTimeUITests.swift; sourceTree = "<group>"; };
 		56A25B14FD6B0C70B27E06C8 /* yolk-idle.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "yolk-idle.json"; sourceTree = "<group>"; };
@@ -155,6 +164,8 @@
 		88D009DF8E9B1BEF9F04AB1A /* soba-idle.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "soba-idle.json"; sourceTree = "<group>"; };
 		8D2EF12A7783F9DC0C952FA3 /* CozyTimeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CozyTimeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8E63D4191ABAEC7D7028DB22 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		8F732C88C5D02DC69E1BA6F6 /* CozyHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CozyHaptics.swift; sourceTree = "<group>"; };
+		8FC5EB698638E5073C9A487B /* cozy_complete.aiff */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = cozy_complete.aiff; sourceTree = "<group>"; };
 		918C56E2D5B263BA270CF551 /* mochi-pause.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "mochi-pause.json"; sourceTree = "<group>"; };
 		91C6DA7EF5506F5D57448D18 /* biscuit-idle.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "biscuit-idle.json"; sourceTree = "<group>"; };
 		97062CE4BC787EBDB21210FD /* bramble-idle.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bramble-idle.json"; sourceTree = "<group>"; };
@@ -166,6 +177,7 @@
 		B4C3020C21BF1B3C2E51EB96 /* FocusViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusViews.swift; sourceTree = "<group>"; };
 		B9A8710CC0B456A7E034DD5A /* HabitMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HabitMath.swift; sourceTree = "<group>"; };
 		BBDA3198C877174B0C782BC4 /* WelcomeBackBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeBackBanner.swift; sourceTree = "<group>"; };
+		C1A3B07F1B30F0F603D8BD1B /* ShortcutsHelpSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsHelpSheet.swift; sourceTree = "<group>"; };
 		CB74B1E5212CD860F60F75E4 /* mochi-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "mochi-complete.json"; sourceTree = "<group>"; };
 		D5D87DAC924338B79DF5719C /* SwiftDataAppDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataAppDataStore.swift; sourceTree = "<group>"; };
 		D87BD941BA160587DF17D891 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -248,6 +260,16 @@
 			);
 			sourceTree = "<group>";
 		};
+		579D173A87C0494934ED78DE /* Sounds */ = {
+			isa = PBXGroup;
+			children = (
+				0FF3EAE91C5C3F9A929606B2 /* cozy_action.aiff */,
+				8FC5EB698638E5073C9A487B /* cozy_complete.aiff */,
+				4B76692F2453F9B0827E196F /* cozy_tick.aiff */,
+			);
+			path = Sounds;
+			sourceTree = "<group>";
+		};
 		93E5E1C04042C3025DADEFF0 /* CozyTimeTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -293,6 +315,7 @@
 			children = (
 				693F00100566AF90D9C11787 /* PrivacyInfo.xcprivacy */,
 				CE789D4D136EB533A44EF3E1 /* Mascot */,
+				579D173A87C0494934ED78DE /* Sounds */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -340,6 +363,7 @@
 			children = (
 				E39FB1A843C46D47C4851C45 /* Commands.swift */,
 				A61A415CD1CE1F570C138413 /* CountdownViews.swift */,
+				8F732C88C5D02DC69E1BA6F6 /* CozyHaptics.swift */,
 				4991F7541F0E081303E3FE90 /* CozyTimeApp.swift */,
 				8E63D4191ABAEC7D7028DB22 /* DesignSystem.swift */,
 				38F48738DBE86D09FC471464 /* FocusTimerStore.swift */,
@@ -348,7 +372,9 @@
 				6565004D696D2ED5323F3E29 /* HabitStatsViews.swift */,
 				8773B1C780038E6EEFB53A87 /* LottieMascot.swift */,
 				7A9FE1DCEFBAAC030AD418CB /* NotificationService.swift */,
+				4E3A44918C583E03B6639860 /* Onboarding.swift */,
 				6B0EC918D0E99B8D3BD00360 /* RootView.swift */,
+				C1A3B07F1B30F0F603D8BD1B /* ShortcutsHelpSheet.swift */,
 				FA3F3D066B5C7D291D5EB5A1 /* StatusBarController.swift */,
 				494A69F5E455467346DAF1E0 /* TaskViews.swift */,
 				BBDA3198C877174B0C782BC4 /* WelcomeBackBanner.swift */,
@@ -515,6 +541,9 @@
 				ABE975C734B93CEFC4BBF381 /* biscuit-pause.json in Resources */,
 				01D36B2791A8010D4BC35BD1 /* biscuit-sleep.json in Resources */,
 				284663D68C6BAE725809D165 /* bramble-idle.json in Resources */,
+				4441728833A425559B66EBD9 /* cozy_action.aiff in Resources */,
+				B68E3C80348B28AB8DF8037D /* cozy_complete.aiff in Resources */,
+				D1EEE45C3023AB8FB76CB5E4 /* cozy_tick.aiff in Resources */,
 				0C27E617C5C5D613CE245907 /* hazel-idle.json in Resources */,
 				48C8C44F4F2BC6F5E9FB52C4 /* mochi-complete.json in Resources */,
 				62F184D11CFFC2438116757E /* mochi-focus.json in Resources */,
@@ -558,6 +587,7 @@
 			files = (
 				75CE2AC47BD9860D0C015C96 /* Commands.swift in Sources */,
 				93BB926259DD4FDEB9810DDB /* CountdownViews.swift in Sources */,
+				B2763572C35B55E48C43F057 /* CozyHaptics.swift in Sources */,
 				55ADFB20A24434B84D301983 /* CozyTimeApp.swift in Sources */,
 				594C123E0E12FEF759F29189 /* DesignSystem.swift in Sources */,
 				F245F049FB70DDC6322E8DF1 /* FocusTimerStore.swift in Sources */,
@@ -566,7 +596,9 @@
 				AC12336409390C2690A550AB /* HabitStatsViews.swift in Sources */,
 				679B0A7C303201CD2D25F02D /* LottieMascot.swift in Sources */,
 				3575A75AEA7ECD357F55A01B /* NotificationService.swift in Sources */,
+				EBFE56BF5080D1F385463285 /* Onboarding.swift in Sources */,
 				3A555846372635C3C3260D17 /* RootView.swift in Sources */,
+				E2B16B74C3D89D29C9058495 /* ShortcutsHelpSheet.swift in Sources */,
 				5E26B3060518F375A0E15BED /* StatusBarController.swift in Sources */,
 				8AA2D17B46EF12AF61B43057 /* SwiftDataAppDataStore.swift in Sources */,
 				C85191D64F053BB193DEC6DC /* TaskViews.swift in Sources */,

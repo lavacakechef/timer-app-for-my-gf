@@ -6,6 +6,15 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var database: CozyDatabase
     @Published private(set) var lastSaveError: String?
     @Published private(set) var containerFailureMessage: String?
+    /// Set to the paw count when a surprise drop fires on this open; nil otherwise.
+    /// `FirstSessionCard` observes this and clears it after showing the toast.
+    @Published var surpriseDropPaws: Int?
+
+    /// UX MED #98 — main-window UndoManager. Delete operations
+    /// (deleteTask / deleteHabit / deleteCountdown) register an undo group
+    /// that re-inserts the removed record so ⌘Z in the main window restores
+    /// it. Read-only deletes (focus session purge, etc.) are not wrapped.
+    let undoManager = UndoManager()
 
     private let fileURL: URL
 
@@ -32,6 +41,70 @@ final class AppDataStore: ObservableObject {
     var rewards: [RewardItem] { database.rewards }
     var progression: ProgressionSummary { CozyProgression.summary(for: database) }
 
+    /// Returns the date of the previous app open, used to detect a long absence
+    /// (see `isMochiSleeping` in `FirstSessionCard`). Written by `recordAppOpen()`
+    /// before it updates to the current date, so the value here is always the
+    /// PREVIOUS open timestamp.
+    var lastOpenedDate: Date? {
+        UserDefaults.standard.object(forKey: "cozy.lastOpenedDate") as? Date
+    }
+
+    /// Call once per app-open (in `CozyMainWindowContent.onAppear`). Reads the
+    /// prior open date for sleep-detection BEFORE overwriting it with now.
+    func recordAppOpen() {
+        UserDefaults.standard.set(Date(), forKey: "cozy.lastOpenedDate")
+    }
+
+    // MARK: - Surprise drop on idle-return (#104)
+
+    private enum SurpriseDropKeys {
+        static let lastDropDate = "cozy.lastSurpriseDropDate"
+        static let absentGap: TimeInterval = 24 * 3600
+        static let windowGap: TimeInterval = 7 * 24 * 3600
+    }
+
+    /// Call BEFORE `recordAppOpen()`. Checks whether this open qualifies for a
+    /// surprise paw drop (absent-cluster rule + 7-day cap), fires it if so, and
+    /// publishes the result via `surpriseDropPaws` for `FirstSessionCard` to show.
+    /// Returns the paw count awarded, or nil when no drop fires.
+    ///
+    /// Logic:
+    ///  1. No prior open date → first launch, skip.
+    ///  2. Gap < 24 h → still within the same cluster, skip.
+    ///  3. Gap ≥ 24 h → new cluster. Reset the per-cluster guard and proceed.
+    ///  4. 7-day rolling window cap → skip if a drop fired within the last 7 days.
+    ///  5. Drop fires: award 1–5 paws, record timestamps.
+    @discardableResult
+    func checkAndFireSurpriseDrop() -> Int? {
+        let now = Date()
+        let defaults = UserDefaults.standard
+
+        // Require a previous open timestamp.
+        guard let last = lastOpenedDate else { return nil }
+
+        let gap = now.timeIntervalSince(last)
+
+        // Not a new cluster: gap < 24 h — same cluster, no drop.
+        guard gap >= SurpriseDropKeys.absentGap else { return nil }
+
+        // New cluster detected (gap ≥ 24 h).
+        // 7-day rolling window cap: ≤ 1 drop per 7-day window.
+        if let lastDrop = defaults.object(forKey: SurpriseDropKeys.lastDropDate) as? Date,
+           now.timeIntervalSince(lastDrop) < SurpriseDropKeys.windowGap {
+            return nil
+        }
+
+        // Fire: 1–5 paws, random.
+        let paws = Int.random(in: 1...5)
+        database.bonusPaws += paws
+        save()
+
+        defaults.set(now, forKey: SurpriseDropKeys.lastDropDate)
+
+        surpriseDropPaws = paws
+        return paws
+    }
+
     func addTask(_ task: TaskItem) {
         database.tasks.append(task)
         save()
@@ -44,8 +117,12 @@ final class AppDataStore: ObservableObject {
     }
 
     func deleteTask(id: UUID) {
+        guard let removed = database.tasks.first(where: { $0.id == id }) else { return }
         database.tasks.removeAll { $0.id == id }
         save()
+        registerUndo(actionName: "Delete Task") { [weak self] in
+            self?.addTask(removed)
+        }
     }
 
     func toggleTaskCompletion(id: UUID, at date: Date = Date()) {
@@ -88,8 +165,12 @@ final class AppDataStore: ObservableObject {
     }
 
     func deleteCountdown(id: UUID) {
+        guard let removed = database.countdowns.first(where: { $0.id == id }) else { return }
         database.countdowns.removeAll { $0.id == id }
         save()
+        registerUndo(actionName: "Delete Countdown") { [weak self] in
+            self?.addCountdown(removed)
+        }
     }
 
     func rescheduleCountdown(id: UUID, to targetDate: Date) {
@@ -103,9 +184,19 @@ final class AppDataStore: ObservableObject {
         save()
     }
 
+    func updateHabit(_ habit: Habit) {
+        guard let index = database.habits.firstIndex(where: { $0.id == habit.id }) else { return }
+        database.habits[index] = habit
+        save()
+    }
+
     func deleteHabit(id: UUID) {
+        guard let removed = database.habits.first(where: { $0.id == id }) else { return }
         database.habits.removeAll { $0.id == id }
         save()
+        registerUndo(actionName: "Delete Habit") { [weak self] in
+            self?.addHabit(removed)
+        }
     }
 
     func toggleHabit(id: UUID, at date: Date = Date()) {
@@ -186,6 +277,17 @@ final class AppDataStore: ObservableObject {
             || category.localizedCaseInsensitiveContains("skin")
             || category.localizedCaseInsensitiveContains("timer frame")
             || category.localizedCaseInsensitiveContains("room decor")
+    }
+
+    /// UX MED #98 — register a single-step undo. The closure runs on the
+    /// main actor (the store itself is @MainActor) and is responsible for
+    /// re-inserting the deleted record. Action name shows up in the Edit
+    /// menu (e.g. "Undo Delete Task").
+    private func registerUndo(actionName: String, _ undo: @escaping @MainActor () -> Void) {
+        undoManager.registerUndo(withTarget: self) { _ in
+            Task { @MainActor in undo() }
+        }
+        undoManager.setActionName(actionName)
     }
 }
 

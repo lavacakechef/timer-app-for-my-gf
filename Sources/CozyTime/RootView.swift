@@ -14,6 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case habits
     case stats
     case rewards
+    case shop         // → sidebar shortcut that opens Rewards Room on the Shop tab
     case settings
 
     var id: String { rawValue }
@@ -28,7 +29,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .focus: "Focus"
         case .habits: "Habits"
         case .stats: "Stats"
-        case .rewards: "Rewards Room"
+        case .rewards: "Desk Room"
+        case .shop: "Shop"
         case .settings: "Settings"
         }
     }
@@ -43,7 +45,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .focus: "timer"
         case .habits: "sparkles"
         case .stats: "chart.bar.xaxis"
-        case .rewards: "shippingbox.fill"
+        case .rewards: "sparkles.rectangle.stack.fill"
+        case .shop: "bag.fill"
         case .settings: "gearshape.fill"
         }
     }
@@ -66,6 +69,9 @@ struct RootView: View {
     @EnvironmentObject private var timerStore: FocusTimerStore
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
+    // Shared with RewardsRoomView so the sidebar Shop shortcut can pre-select
+    // the shop tab before navigation lands.
+    @AppStorage("selectedRewardsMode") private var selectedRewardsMode: String = "room"
     // UX MED #97: persist selected sidebar section across launches via
     // SceneStorage. Falls back to the section provided by -cozy-start-section
     // launch arg / .cozyOpenSection notification on first run.
@@ -80,18 +86,18 @@ struct RootView: View {
     //   - "Upcoming" removed (redundant with Tasks; now a filter inside Tasks)
     //   - "Countdowns" removed (folded into Calendar — date-pinned events
     //     live alongside calendar days)
-    private let sidebarGroups: [(title: String, sections: [AppSection])] = [
-        ("Start", [.today, .focus, .tasks]),
-        ("Plan", [.calendar]),
-        ("Grow", [.habits, .stats, .rewards]),
-        ("App", [.settings])
+    private let sidebarGroups: [(title: String, subtitle: String, sections: [AppSection])] = [
+        ("Start", "Focus & task quick-add", [.today, .focus, .tasks]),
+        ("Plan", "Tasks & countdowns", [.calendar]),
+        ("Grow", "Habits, rewards & shop", [.habits, .stats, .rewards, .shop]),
+        ("App", "Settings & help", [.settings])
     ]
 
     var body: some View {
         NavigationSplitView {
             List {
                 ForEach(sidebarGroups, id: \.title) { group in
-                    Section(group.title) {
+                    Section(header: SidebarGroupHeader(title: group.title, subtitle: group.subtitle)) {
                         ForEach(group.sections) { section in
                             sidebarButton(for: section)
                         }
@@ -134,6 +140,8 @@ struct RootView: View {
                     StatsView()
                 case .rewards:
                     RewardsRoomView()
+                case .shop:
+                    RewardsRoomView()
                 case .settings:
                     SettingsScreen()
                 }
@@ -163,6 +171,30 @@ struct RootView: View {
             // so old notifications keep landing somewhere sensible.
             selectedSection = section.resolvedDestination
         }
+        // UX HIGH #85: ⌘N context-aware. Commands posts `.cozyNewItem`; we
+        // resolve which section is active and re-post the matching scoped
+        // notification so each composer can subscribe via .onReceive without
+        // knowing about the others.
+        .onReceive(NotificationCenter.default.publisher(for: .cozyNewItem)) { _ in
+            switch (selectedSection ?? .today).resolvedDestination {
+            case .habits:
+                NotificationCenter.default.post(name: .cozyNewHabit, object: nil)
+            case .calendar:
+                NotificationCenter.default.post(name: .cozyNewCountdown, object: nil)
+            default:
+                // Today / Tasks / everything-else: focus the task quick-add bar.
+                // If the user is on a section without a composer (e.g. Stats /
+                // Rewards / Settings), navigate to Tasks first so the keystroke
+                // still produces a useful affordance.
+                if (selectedSection ?? .today).resolvedDestination != .tasks
+                    && (selectedSection ?? .today).resolvedDestination != .today {
+                    selectedSection = .tasks
+                }
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .cozyNewTask, object: nil)
+                }
+            }
+        }
         .onAppear {
             // Restore last-selected section from SceneStorage if no launch
             // arg explicitly requested one (and the launch arg path didn't
@@ -176,6 +208,11 @@ struct RootView: View {
         }
         .onChange(of: selectedSection) { _, newValue in
             storedSection = newValue?.rawValue ?? ""
+            // When the sidebar Shop shortcut is tapped, pre-select the shop
+            // tab inside RewardsRoomView before the view renders.
+            if newValue == .shop {
+                selectedRewardsMode = "shop"
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("CozyTime")
@@ -212,11 +249,41 @@ struct RootView: View {
             return CozyPalette.habitLavender
         case .stats:
             return CozyPalette.skyBlue
-        case .rewards:
+        case .rewards, .shop:
             return theme.reward
         case .settings:
             return CozyPalette.secondaryText(colorScheme)
         }
+    }
+}
+
+// U3.8 — hover subtitles on sidebar group labels.
+// The subtitle fades in on pointer-enter and out on pointer-leave.
+// Animation is gated on reduceMotion: CozyMotion.gentle returns nil (instant)
+// when Reduce Motion is enabled, satisfying AM-001.
+private struct SidebarGroupHeader: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let title: String
+    let subtitle: String
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(CozyType.captionStrong)
+                .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+                .textCase(.uppercase)
+                .tracking(0.5)
+            if isHovered {
+                Text(subtitle)
+                    .font(CozyType.footnote.italic())
+                    .foregroundStyle(CozyPalette.secondaryText(colorScheme).opacity(0.7))
+                    .transition(.opacity)
+            }
+        }
+        .animation(CozyMotion.gentle(reduceMotion, duration: 0.15), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -292,6 +359,7 @@ struct SectionHeader: View {
                 Text(title)
                     .font(CozyType.pageTitle)
                     .foregroundStyle(CozyPalette.primaryText(colorScheme))
+                    .accessibilityAddTraits(.isHeader)
                 Text(subtitle)
                     .font(CozyType.body)
                     .foregroundStyle(CozyPalette.secondaryText(colorScheme))
@@ -305,42 +373,109 @@ struct SectionHeader: View {
 struct SidebarTimerStatus: View {
     @EnvironmentObject private var timerStore: FocusTimerStore
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
 
     var body: some View {
+        let theme = CozyTheme.named(selectedTheme)
         TimelineView(.periodic(from: .now, by: timerStore.isActive ? 1 : 60)) { context in
-            Button {
-                // Tap pill → jump to Focus screen. Previously the pill was a static label
-                // with no affordance, so users running a timer couldn't quickly get back
-                // to the running view from any other section.
-                NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.focus.rawValue)
-            } label: {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(statusTitle(at: context.date), systemImage: timerStore.needsCompletionReview ? "checkmark.seal.fill" : "timer")
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(2)
-                    if timerStore.isActive || timerStore.needsCompletionReview {
-                        Text(timerStore.needsCompletionReview ? "Claim reward" : CozyFormatters.timerString(timerStore.remaining(at: context.date)))
-                            .font(CozyType.metricSmall)
-                            .foregroundStyle(CozyPalette.focusJade)
-                            .monospacedDigit()
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
-                        .fill(CozyPalette.raisedFill(colorScheme).opacity(0.92))
-                )
-                .contentShape(RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous))
+            // UX LOW #102 — idle sidebar pill collapses to a slim 28pt "Start
+            // a session" affordance. Full pill (mascot + timer + progress)
+            // only renders while the timer is active or waiting for review;
+            // idle state shouldn't dominate the lower sidebar where
+            // nothing's happening yet.
+            if timerStore.isActive || timerStore.needsCompletionReview {
+                activePill(theme: theme, at: context.date)
+            } else {
+                idleAffordance(theme: theme)
             }
-            .buttonStyle(.plain)
-            .cozyPressable(pressedScale: 0.985, hoverScale: 1.005)
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.04), radius: 6, y: 2)
-            .padding(.bottom, 8)
-            .help(timerStore.isActive || timerStore.needsCompletionReview ? "Open the running focus session" : "Open Focus")
-            .accessibilityLabel(timerStore.isActive || timerStore.needsCompletionReview ? "Open running focus session" : "Open Focus")
-            .accessibilityIdentifier("sidebar.timerStatus")
         }
+    }
+
+    @ViewBuilder
+    private func activePill(theme: CozyTheme, at date: Date) -> some View {
+        Button {
+            NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.focus.rawValue)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    MascotView(state: timerStore.isActive ? .focus : .idle, size: .inline)
+                        .accessibilityHidden(true)
+                    Text(timerStore.needsCompletionReview
+                         ? CozyFormatters.timerString(0)
+                         : CozyFormatters.timerString(timerStore.remaining(at: date)))
+                        .font(CozyType.metricSmall)
+                        .monospacedDigit()
+                        .foregroundStyle(theme.accent)
+                    Spacer(minLength: 4)
+                }
+                Text(statusTitle(at: date))
+                    .font(.caption)
+                    .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if timerStore.isActive {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(theme.accent.opacity(0.18))
+                                .frame(height: 2)
+                            Capsule()
+                                .fill(theme.accent)
+                                .frame(width: geo.size.width * timerStore.progress(at: date), height: 2)
+                        }
+                    }
+                    .frame(height: 2)
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
+                    .fill(theme.accent.opacity(colorScheme == .dark ? 0.10 : 0.07))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
+                    .stroke(theme.accent.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .cozyPressable(pressedScale: 0.985, hoverScale: 1.005)
+        .padding(.bottom, 8)
+        .help("Open the running focus session")
+        .accessibilityLabel("Open running focus session")
+        .accessibilityIdentifier("sidebar.timerStatus")
+    }
+
+    @ViewBuilder
+    private func idleAffordance(theme: CozyTheme) -> some View {
+        Button {
+            NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.focus.rawValue)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "timer")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(theme.accent)
+                Text("Start a session")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CozyPalette.primaryText(colorScheme))
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: CozyLayout.subCardRadius, style: .continuous)
+                    .fill(theme.accent.opacity(colorScheme == .dark ? 0.10 : 0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CozyLayout.subCardRadius, style: .continuous)
+                    .stroke(theme.accent.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .cozyPressable(pressedScale: 0.985, hoverScale: 1.005)
+        .padding(.bottom, 8)
+        .help("Open Focus")
+        .accessibilityLabel("Open Focus")
+        .accessibilityIdentifier("sidebar.timerStatus")
     }
 
     private func statusTitle(at date: Date) -> String {

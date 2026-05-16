@@ -1,3 +1,7 @@
+// DEPRECATED: replaced by MenuBarExtra in CozyTimeApp.swift (macOS 15).
+// This file is kept for reference / rollback only. It is no longer
+// instantiated by the app and will be deleted after the next release
+// cycle confirms MenuBarExtra is stable in production.
 import AppKit
 import Combine
 import CozyCore
@@ -232,6 +236,9 @@ final class StatusBarController: NSObject, ObservableObject {
             dataStore.completeTask(id: taskID, at: now)
         }
         CozyFeedback.play(reward.isRewardEligible ? .reward : .complete)
+        // TODO(UX-88): personalize completion microcopy with mascotName
+        // (status-bar tooltip strings here aren't mascot-voice today).
+        CozyHaptics.perform(reward.isRewardEligible ? .reward : .completion)
         timerStore.reset()
         UserDefaults.standard.set("", forKey: "focus.activeBoostID")
         updateButton()

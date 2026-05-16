@@ -2,6 +2,39 @@ import XCTest
 @testable import CozyCore
 
 final class ProgressionTests: XCTestCase {
+    func testLegacyDatabaseJSONMissingBonusPawsStillDecodes() throws {
+        let json = """
+        {
+          "countdowns": [],
+          "focusSessions": [],
+          "habits": [],
+          "rewards": [],
+          "tasks": [
+            {
+              "completedAt": null,
+              "createdAt": "2026-05-17T00:00:00Z",
+              "dueDate": null,
+              "estimatedMinutes": 25,
+              "id": "00000000-0000-0000-0000-000000000101",
+              "listName": "Inbox",
+              "notes": "Legacy JSON did not have bonusPaws.",
+              "priority": 1,
+              "repeatRule": "",
+              "tagText": "legacy",
+              "title": "Keep legacy task"
+            }
+          ]
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let database = try decoder.decode(CozyDatabase.self, from: Data(json.utf8))
+
+        XCTAssertEqual(database.bonusPaws, 0)
+        XCTAssertEqual(database.tasks.map(\.title), ["Keep legacy task"])
+    }
+
     func testProgressionRewardsFocusTasksAndHabitsWithoutPunishment() {
         let now = Date(timeIntervalSinceReferenceDate: 10_000)
         let database = CozyDatabase(
@@ -42,7 +75,8 @@ final class ProgressionTests: XCTestCase {
         let summary = CozyProgression.summary(for: database)
 
         XCTAssertFalse(CozyProgression.canPurchase(item, database: database))
-        XCTAssertEqual(summary.coinsAvailable, 52)
+        // coinsEarned = xp/4 + focusPaws = (240/4) + 0 = 60; spent = Twinkle Bow (6 paws after rebalance)
+        XCTAssertEqual(summary.coinsAvailable, 54)
     }
 
     func testStarterTimerSkinDoesNotCreateHiddenShopDebt() {

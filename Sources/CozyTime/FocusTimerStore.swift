@@ -146,6 +146,9 @@ final class FocusTimerStore: ObservableObject {
         updateTicker()
         updateProcessActivity()
         save()
+        // TODO(UX-88): personalize completion microcopy with mascotName
+        // (no mascot-voice completion string lives in this file yet).
+        CozyHaptics.perform(.completion)
     }
 
     func reset(duration: TimeInterval = 25 * 60) {
@@ -216,6 +219,7 @@ final class FocusTimerStore: ObservableObject {
         if boundary > pawsCrossedThisSession {
             pawsCrossedThisSession = boundary
             pawBoundaryDidCross.send(boundary)
+            CozyHaptics.perform(.milestone)
         }
     }
 

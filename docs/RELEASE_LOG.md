@@ -20,8 +20,8 @@ This file is the canonical "what changed in each build" log. It exists for two r
   `docs/IMPLEMENTATION_NOTES.md`, not here.
 - Tone follows `docs/DESIGN_SYSTEM.md`: never punitive, never "we fixed your
   bad behavior." Bug fixes phrased as "we tidied up X" or "X feels smoother."
-- Never delete an old entry. Old entries are also shipped inside the bundle
-  so a user who skips two versions still sees a coherent timeline.
+- Never delete an old entry. This file is repo/handoff documentation for now;
+  the app does not bundle or parse it yet.
 
 ## Pending entry (uncomment + edit when cutting the next build)
 

@@ -42,6 +42,8 @@ targets:
       - path: Sources/CozyTime/Resources/PrivacyInfo.xcprivacy
       - path: Sources/CozyTime/Resources/Mascot
         buildPhase: resources
+      - path: Sources/CozyTime/Resources/Sounds
+        buildPhase: resources
     dependencies:
       - target: CozyCore
       - package: Lottie

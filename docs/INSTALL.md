@@ -1,6 +1,6 @@
 # CozyTime Private Install
 
-This is a private ad-hoc-signed macOS build. It is intended for one trusted person on **macOS 15.1 Sequoia or later**, not public distribution.
+This is a private ad-hoc-signed macOS build. It requires **macOS 15.0 Sequoia or later** and is tested for the recipient on **macOS 15.1**, not public distribution.
 
 ## Install
 

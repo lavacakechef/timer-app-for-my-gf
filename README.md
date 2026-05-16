@@ -2,7 +2,7 @@
 
 CozyTime is a private native macOS productivity app built for a local-only TickTick-style workflow with a softer, cuter focus loop.
 
-It includes tasks, countdowns, focus sessions, habits, stats, rewards, mascot customization, SwiftData storage, and an AppKit menu bar companion.
+It includes tasks, countdowns, focus sessions, habits, stats, rewards, mascot customization, SwiftData storage, and a SwiftUI `MenuBarExtra` companion.
 
 ## Requirements
 
@@ -44,6 +44,7 @@ The package script runs the release gate by default, then archives and writes:
 
 ```text
 .build/xcode/CozyTime-unsigned-xcode.zip
+/Users/zinklee/Desktop/CozyTime-for-friend.zip
 ```
 
 ## Distribution

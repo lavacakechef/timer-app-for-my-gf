@@ -37,27 +37,41 @@ struct CozyResponsiveFormRow<Leading: View, Trailing: View, Auxiliary: View>: Vi
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
             ViewThatFits(in: .horizontal) {
-                CozyFormRow(spacing: spacing) {
+                HStack(alignment: .top, spacing: spacing) {
                     leading
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    CozyFormRow(spacing: spacing) {
-                        trailing
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
+                    horizontalTrailing
                 }
 
                 VStack(alignment: .leading, spacing: spacing) {
                     leading
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    CozyFormRow(spacing: spacing) {
-                        trailing
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    verticalTrailing
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             auxiliary
         }
+    }
+
+    private var horizontalTrailing: some View {
+        CozyFormRow(spacing: spacing) {
+            trailing
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var verticalTrailing: some View {
+        ViewThatFits(in: .horizontal) {
+            CozyFormRow(spacing: spacing) {
+                trailing
+            }
+            VStack(alignment: .leading, spacing: spacing) {
+                trailing
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -182,6 +196,11 @@ enum CozyLayout {
     // this token for any intentional 8pt radius callsite.
     static let subCardRadius: CGFloat = 8
 
+    // Interactive control radius. Used for toggle tracks, segmented-control
+    // backgrounds, button backgrounds, and flat-panel inner corners. Token
+    // replaces the ~25 magic `cornerRadius: 10` literals (SP-003).
+    static let controlRadius: CGFloat = 10
+
     // Badge inner padding tokens (rule SP-004). Use these whenever a pill or
     // chip wraps a colored capsule background, so badge heights stay uniform
     // across the row.
@@ -191,6 +210,20 @@ enum CozyLayout {
     static let badgePaddingMediumV: CGFloat = 4
     static let badgePaddingLargeH: CGFloat = 16
     static let badgePaddingLargeV: CGFloat = 8
+
+    // Sheet sizing tokens (UX MED #100). Use these on `.frame(width:)` or
+    // `.frame(minWidth:idealWidth:)` for any modal sheet so widths cluster
+    // on a known scale instead of drifting (was: 336, 360, 400, 440, 460,
+    // 480, 560, 640, 720).
+    //   small  — single-decision composers (rename, confirm)
+    //   medium — first-run prompts, settings detail
+    //   large  — multi-section editors (countdowns, focus reflection)
+    static let sheetIdealWidthSmall: CGFloat = 360
+    static let sheetIdealWidthMedium: CGFloat = 460
+    static let sheetIdealWidthLarge: CGFloat = 560
+    static let sheetIdealHeightSmall: CGFloat = 360
+    static let sheetIdealHeightMedium: CGFloat = 520
+    static let sheetIdealHeightLarge: CGFloat = 640
 
     static func adaptiveColumns(minimum: CGFloat = 280) -> [GridItem] {
         [GridItem(.adaptive(minimum: minimum), spacing: gridSpacing, alignment: .top)]
@@ -298,6 +331,16 @@ enum CozyPalette {
         colorScheme == .dark ? darkBorder : neutralBorder
     }
 
+    /// UX LOW #108 — contrast-aware border. When `.increased` is set (System
+    /// Settings → Accessibility → Display → Increase contrast), darken the
+    /// border so the card edge separates clearly from the canvas. Keeps the
+    /// soft 1-pt hairline at default contrast; jumps to a more deliberate
+    /// stroke when the user has explicitly asked for sharper outlines.
+    static func cardBorder(_ colorScheme: ColorScheme, contrast: ColorSchemeContrast) -> Color {
+        let base = cardBorder(colorScheme)
+        return contrast == .increased ? base.opacity(0.85) : base
+    }
+
     static func quietContainer(_ colorScheme: ColorScheme) -> Color {
         colorScheme == .dark ? darkRaised.opacity(0.72) : Color(hex: "#FFF5F0")
     }
@@ -328,13 +371,24 @@ enum CozyFeedback {
             case .delete: NSSound.Name("Basso")
             }
         }
+
+        var bundleSoundName: String {
+            switch self {
+            case .complete, .reward: "cozy_complete"
+            case .add, .undo: "cozy_tick"
+            case .delete: "cozy_action"
+            }
+        }
     }
 
     static func play(_ cue: Cue) {
         guard UserDefaults.standard.bool(forKey: "soundsEnabled") else { return }
-        if NSSound(named: cue.soundName)?.play() != true {
-            NSSound.beep()
+        if let path = Bundle.main.path(forResource: cue.bundleSoundName, ofType: "aiff"),
+           let sound = NSSound(contentsOfFile: path, byReference: false) {
+            sound.play()
+            return
         }
+        _ = NSSound(named: cue.soundName)?.play()
     }
 }
 
@@ -747,16 +801,16 @@ struct CozyIconButtonStyle: ButtonStyle {
                 .foregroundStyle(isEnabled ? theme.accent : CozyPalette.secondaryText(colorScheme).opacity(0.6))
                 .frame(width: size, height: size)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .fill(backgroundFill)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .stroke(iconBorder, lineWidth: isFocused && isEnabled ? 2 : 1)
                 )
                 .scaleEffect(!reduceMotion && configuration.isPressed ? 0.96 : 1)
                 .opacity(isEnabled ? 1 : 0.58)
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous))
                 .focused($isFocused)
                 .focusable(true)
                 .focusEffectDisabled()
@@ -839,16 +893,16 @@ struct CozyActionButtonStyle: ButtonStyle {
                     alignment: .center
                 )
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .fill(background)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .stroke(border, lineWidth: isFocused && isEnabled ? 2 : 1)
                 )
                 .shadow(color: shadow, radius: kind == .primary && isEnabled ? 10 : 0, y: kind == .primary && isEnabled ? 4 : 0)
                 .scaleEffect(!reduceMotion && configuration.isPressed ? 0.985 : 1)
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous))
                 .focused($isFocused)
                 .focusable(true)
                 .focusEffectDisabled()
@@ -940,11 +994,12 @@ struct CozyToggleRow: View {
                     Text(title)
                         .font(CozyType.controlStrong)
                         .foregroundStyle(CozyPalette.primaryText(colorScheme))
+                        .lineLimit(1)
                     if let subtitle {
                         Text(subtitle)
                             .font(CozyType.caption)
                             .foregroundStyle(CozyPalette.secondaryText(colorScheme))
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(1)
                     }
                 }
 
@@ -955,14 +1010,14 @@ struct CozyToggleRow: View {
             .padding(.vertical, subtitle == nil ? 9 : 10)
             .frame(maxWidth: .infinity, minHeight: CozyLayout.controlHeight, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                     .fill(backgroundFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                     .stroke(borderColor, lineWidth: isFocused && isEnabled ? 2 : isHovering && isEnabled ? 1.35 : 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -1043,14 +1098,14 @@ struct CozyDisclosureSection<Content: View>: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, minHeight: CozyLayout.compactControlHeight, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .fill(isExpanded ? theme.secondary.opacity(colorScheme == .dark ? 0.14 : 0.30) : CozyPalette.quietContainer(colorScheme))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .stroke(isExpanded ? theme.accent.opacity(0.26) : CozyPalette.cardBorder(colorScheme), lineWidth: 1)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(title)
@@ -1060,7 +1115,7 @@ struct CozyDisclosureSection<Content: View>: View {
                 content
                     .padding(.horizontal, 10)
                     .padding(.bottom, 4)
-                    .transition(.opacity.combined(with: reduceMotion ? .identity : .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
     }
@@ -1127,6 +1182,8 @@ extension Color {
 struct CozyCard: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    // UX LOW #108 — honor Increase Contrast in System Settings → Accessibility.
+    @Environment(\.colorSchemeContrast) private var contrast
 
     func body(content: Content) -> some View {
         let fill = CozyPalette.cardFill(colorScheme).opacity(reduceTransparency ? 1 : (colorScheme == .dark ? 0.98 : 0.97))
@@ -1139,7 +1196,7 @@ struct CozyCard: ViewModifier {
                     .fill(fill)
                     .overlay(
                         RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
-                            .stroke(CozyPalette.cardBorder(colorScheme), lineWidth: 1)
+                            .stroke(CozyPalette.cardBorder(colorScheme, contrast: contrast), lineWidth: 1)
                     )
             )
             // Two-shadow elevation per Refactoring UI: tight crisp shadow for the
@@ -1155,13 +1212,17 @@ struct CozyCard: ViewModifier {
 // (e.g. the inner stats strip in FirstSessionCard, the boost detail row in
 // FocusSetupCard). No shadow, hairline border, smaller padding. Formalizes
 // the de facto third rung that was previously hard-coded inline as
-// RoundedRectangle(cornerRadius: 10, style: .continuous) across ~12 sites.
+// RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous) across ~12 sites.
 struct CozyFlatPanel: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
-    var radius: CGFloat = 10
+    // UX LOW #108 — Increase Contrast bumps the hairline so the inner panel
+    // pops away from its parent card.
+    @Environment(\.colorSchemeContrast) private var contrast
+    var radius: CGFloat = CozyLayout.controlRadius
     var paddingValue: CGFloat = 12
 
     func body(content: Content) -> some View {
+        let borderOpacity: Double = contrast == .increased ? 0.85 : 0.6
         content
             .padding(paddingValue)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -1171,7 +1232,7 @@ struct CozyFlatPanel: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(CozyPalette.cardBorder(colorScheme).opacity(0.6), lineWidth: 0.5)
+                    .stroke(CozyPalette.cardBorder(colorScheme).opacity(borderOpacity), lineWidth: 0.5)
             )
             .foregroundStyle(CozyPalette.primaryText(colorScheme))
     }
@@ -1179,6 +1240,9 @@ struct CozyFlatPanel: ViewModifier {
 
 struct CozyHeroCard: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    // UX LOW #108 — Increase Contrast deepens the hero-card outline against
+    // the gradient fill so the card edge stays readable.
+    @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
 
     func body(content: Content) -> some View {
@@ -1199,7 +1263,7 @@ struct CozyHeroCard: ViewModifier {
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(CozyPalette.cardBorder(colorScheme), lineWidth: 1)
+                                    .stroke(CozyPalette.cardBorder(colorScheme, contrast: contrast), lineWidth: 1)
                             )
             )
             // Two-shadow elevation per Refactoring UI — see CozyCard.
@@ -1302,16 +1366,16 @@ private struct CozyFieldDecoration: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                     .fill(isEnabled ? CozyPalette.raisedFill(colorScheme) : CozyPalette.quietContainer(colorScheme).opacity(0.62))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                     .stroke(borderColor, lineWidth: (isFocused || isHovering) && isEnabled ? 1.35 : 1)
             )
             .shadow(color: isFocused ? borderColor.opacity(0.16) : .clear, radius: 8, y: 0)
             .opacity(isEnabled ? 1 : 0.62)
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous))
     }
 }
 
@@ -1429,6 +1493,9 @@ struct CozySegmentOption<Value: Hashable>: Identifiable {
 
 struct CozySegmentedControl<Value: Hashable>: View {
     @Environment(\.colorScheme) private var colorScheme
+    // UX LOW #108 — Increase Contrast sharpens the segmented-control track
+    // so the unselected state isn't a near-invisible chip on canvas.
+    @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
 
     let options: [CozySegmentOption<Value>]
@@ -1453,17 +1520,17 @@ struct CozySegmentedControl<Value: Hashable>: View {
                     }
                     .frame(minWidth: minSegmentWidth, minHeight: CozyLayout.compactControlHeight)
                     .padding(.horizontal, 8)
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .font(CozyType.controlStrong)
                 .foregroundStyle(selection == option.id ? theme.foregroundOnAccent(colorScheme) : CozyPalette.primaryText(colorScheme))
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .fill(selection == option.id ? theme.accent : Color.clear)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .stroke(selection == option.id ? theme.accent.opacity(0.32) : Color.clear, lineWidth: 1)
                 )
                 .accessibilityAddTraits(selection == option.id ? .isSelected : AccessibilityTraits())
@@ -1476,7 +1543,7 @@ struct CozySegmentedControl<Value: Hashable>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(CozyPalette.cardBorder(colorScheme), lineWidth: 1)
+                .stroke(CozyPalette.cardBorder(colorScheme, contrast: contrast), lineWidth: 1)
         )
     }
 }
@@ -1612,11 +1679,9 @@ struct CozyDurationChip: View, Equatable {
 // Forest, and Bear Focus all converge on; chips alone aren't enough above ~30
 // minutes, and free slider alone makes 25-min the hard-to-hit needle.
 //
-// Performance: the slider's live position is held in a **local** @State so
-// dragging at 60fps doesn't re-render the entire parent card (which would
-// include the mascot + cozyCard chrome + adjacent siblings). Writes propagate
-// to the outer @Binding on `.onChange` of liveMinutes, but only the picker
-// subtree re-renders during the drag — not the whole hero card.
+// Performance: high-frequency slider state lives in CozyDurationSliderControl,
+// a tiny child view. Dragging the thumb no longer invalidates preset chips,
+// ViewThatFits, parent hero cards, or adjacent mascot panels.
 struct CozyDurationPicker: View {
     struct Preset {
         let minutes: Int
@@ -1635,35 +1700,6 @@ struct CozyDurationPicker: View {
     var identifierPrefix: String? = nil
     var compactChipMinWidth: CGFloat = 84
 
-    // Slider lag fix v3 — researched root cause and Apple-recommended pattern.
-    // PREVIOUS PROBLEMS:
-    //   v1: slider binding directly wrote to outer @State (parent re-rendered
-    //       every frame including mascot/chips — 60fps body re-execution).
-    //   v2: Slider had `step: 1` which makes NSSlider's thumb snap to integers,
-    //       causing visible micro-stutter every ~1.6pt of cursor movement when
-    //       the picker is rendered at typical card width (~300pt over 1-180).
-    // FIX (v3):
-    //   - Local @State holds a continuous Double position (NSSlider tracks
-    //     cursor smoothly, no snap).
-    //   - Display label rounds for human consumption only.
-    //   - Outer @Binding commits ONLY at drag-end (onEditingChanged → false)
-    //     and on chip taps, so parent body doesn't recompute during the drag.
-    //   - .animation(nil) on the position state defeats SwiftUI's implicit
-    //     animation that can come from ambient `withAnimation` callers.
-    // References:
-    //   - Apple Slider docs: https://developer.apple.com/documentation/swiftui/slider
-    //   - WWDC23 "Demystify SwiftUI performance" — isolating high-frequency
-    //     state into a sub-view to avoid invalidating siblings.
-    //   - Donny Wals on @Observable / per-property tracking (cited in the
-    //     repo-wide best-practice audit).
-    @State private var sliderPosition: Double = 25
-    @State private var isDraggingSlider = false
-
-    private var liveMinutes: Int {
-        max(range.lowerBound,
-            min(range.upperBound, Int(sliderPosition.rounded())))
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ViewThatFits(in: .horizontal) {
@@ -1673,54 +1709,90 @@ struct CozyDurationPicker: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label(CozyFormatters.durationLabel(TimeInterval(liveMinutes * 60)), systemImage: "slider.horizontal.3")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(accent)
-                        .lineLimit(1)
-                        .monospacedDigit()
-                    Spacer(minLength: 8)
-                    Text(rangeLabel)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                sliderRow
-                    .controlSize(.small)
-                    .tint(accent)
-                    .accessibilityLabel("Focus duration")
-                    .accessibilityValue("\(liveMinutes) minutes")
-                    .accessibilityIdentifier(identifierPrefix.map { "\($0).customMinutes" } ?? "duration.slider")
+            CozyDurationSliderControl(
+                committedMinutes: minutes,
+                accent: accent,
+                range: range,
+                identifier: identifierPrefix.map { "\($0).customMinutes" } ?? "duration.slider"
+            ) { newMinutes in
+                minutes = newMinutes
             }
         }
-        .animation(nil, value: sliderPosition)   // no implicit animations from ancestors
-        .onAppear { sliderPosition = Double(minutes) }
-        // Outer → local for external updates (e.g. completion auto-resets to 5).
-        // Don't touch sliderPosition while user is mid-drag.
-        .onChange(of: minutes) { _, newValue in
+    }
+
+    @ViewBuilder
+    private var chipRow: some View {
+        ForEach(Array(presets.enumerated()), id: \.offset) { _, preset in
+            CozyDurationChip(
+                minutes: preset.minutes,
+                symbolName: preset.symbol,
+                isSelected: minutes == preset.minutes,
+                accent: accent
+            ) {
+                minutes = preset.minutes   // chip tap = immediate commit
+            }
+            .applyingIfLet(identifierPrefix) { view, prefix in
+                view.accessibilityIdentifier("\(prefix).select.\(preset.minutes)")
+            }
+        }
+    }
+}
+
+private struct CozyDurationSliderControl: View {
+    let committedMinutes: Int
+    let accent: Color
+    let range: ClosedRange<Int>
+    let identifier: String
+    let onCommit: (Int) -> Void
+
+    @State private var sliderPosition: Double = 25
+    @State private var isDraggingSlider = false
+
+    private var liveMinutes: Int {
+        max(range.lowerBound,
+            min(range.upperBound, Int(sliderPosition.rounded())))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(CozyFormatters.durationLabel(TimeInterval(liveMinutes * 60)), systemImage: "slider.horizontal.3")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(accent)
+                    .lineLimit(1)
+                    .monospacedDigit()
+                Spacer(minLength: 8)
+                Text(rangeLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            sliderRow
+                .controlSize(.small)
+                .tint(accent)
+                .accessibilityLabel("Focus duration")
+                .accessibilityValue("\(liveMinutes) minutes")
+                .accessibilityIdentifier(identifier)
+        }
+        .animation(nil, value: sliderPosition)
+        .onAppear { sliderPosition = Double(committedMinutes) }
+        .onChange(of: committedMinutes) { _, newValue in
             if !isDraggingSlider && Int(sliderPosition.rounded()) != newValue {
                 sliderPosition = Double(newValue)
             }
         }
     }
 
-    // Continuous (no `step:`) Double slider. NSSlider behind SwiftUI Slider
-    // tracks the cursor pixel-perfect; rounding happens at display time.
-    // Outer @Binding commits exactly once per drag, at drag end.
     private var sliderRow: some View {
-        let sliderRange = Double(range.lowerBound)...Double(range.upperBound)
-        return Slider(
+        Slider(
             value: $sliderPosition,
-            in: sliderRange,
+            in: Double(range.lowerBound)...Double(range.upperBound),
             onEditingChanged: { editing in
                 isDraggingSlider = editing
-                if !editing {
-                    // Snap to integer at drag end + commit to outer once.
-                    let snapped = liveMinutes
-                    sliderPosition = Double(snapped)
-                    if snapped != minutes {
-                        minutes = snapped
-                    }
+                guard !editing else { return }
+                let snapped = liveMinutes
+                sliderPosition = Double(snapped)
+                if snapped != committedMinutes {
+                    onCommit(snapped)
                 }
             },
             minimumValueLabel: sliderEndLabel(range.lowerBound),
@@ -1734,24 +1806,6 @@ struct CozyDurationPicker: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
             .monospacedDigit()
-    }
-
-    @ViewBuilder
-    private var chipRow: some View {
-        ForEach(Array(presets.enumerated()), id: \.offset) { _, preset in
-            CozyDurationChip(
-                minutes: preset.minutes,
-                symbolName: preset.symbol,
-                isSelected: liveMinutes == preset.minutes,
-                accent: accent
-            ) {
-                sliderPosition = Double(preset.minutes)
-                minutes = preset.minutes   // chip tap = immediate commit
-            }
-            .applyingIfLet(identifierPrefix) { view, prefix in
-                view.accessibilityIdentifier("\(prefix).select.\(preset.minutes)")
-            }
-        }
     }
 
     private var rangeLabel: String {
@@ -1871,8 +1925,8 @@ struct CozyDateInput: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
                 }
-                .frame(minWidth: 190, maxWidth: .infinity, minHeight: CozyLayout.controlHeight, alignment: .leading)
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(maxWidth: .infinity, minHeight: CozyLayout.controlHeight, alignment: .leading)
+                .contentShape(RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous))
             }
             .buttonStyle(.plain)
             .cozyControlShell(minWidth: 190, alignment: .leading)
@@ -2284,6 +2338,17 @@ struct MascotView: View {
         CozyMascotStyle.named(styleIDOverride ?? selectedMascotStyle).id
     }
 
+    private var usesLottieBody: Bool {
+        guard !reduceMotion,
+              !reducedDecoration,
+              Self.firstMatchingAsset(styleID: styleID, state: state) == nil,
+              let lottieCharacter = CozyLottieMascot.lottiePrefix(forStyleID: styleID)
+        else {
+            return false
+        }
+        return CozyLottieMascot.isBundled(character: lottieCharacter)
+    }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30 * 60)) { context in
             mascot(moment: MascotMoment.current(at: context.date))
@@ -2328,7 +2393,7 @@ struct MascotView: View {
                 // the explicit reducedDecoration toggle.
                 .modifier(MascotIdleLife(
                     reduceMotion: reduceMotion,
-                    reducedDecoration: reducedDecoration,
+                    reducedDecoration: reducedDecoration || usesLottieBody,
                     size: size,
                     // Skip the SwiftUI eyelid overlay when a Lottie animation
                     // is driving the body — Pancake the Shiba already blinks
@@ -3034,7 +3099,9 @@ struct MascotIdleLife: ViewModifier {
         if reduceMotion || reducedDecoration {
             content   // truly static
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+            // 10fps for card/avatar sizes (≤88pt) — barely perceptible at small scale,
+            // dramatically reduces concurrent frame callbacks on Today's grid.
+            TimelineView(.animation(minimumInterval: size >= 120 ? 1.0 / 30.0 : 1.0 / 10.0)) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 // Breath: 3 s full cycle, ±1.5 % scale. Apple's 1.025 ceiling
                 // for "alive but not distracting."
@@ -3114,18 +3181,21 @@ struct EquippedMascotView: View {
     var body: some View {
         let bodySize = size * 0.78
         MascotDisplayFrame(size: size) {
-            ZStack {
+            ZStack(alignment: .center) {
                 MascotView(state: state, size: bodySize)
-                ForEach(Array(equippedWearables.enumerated()), id: \.element.id) { index, reward in
-                    Image(systemName: reward.symbolName)
-                        .font(.system(size: bodySize * 0.15, weight: .bold))
-                        // TC-002 OK: data-driven reward color, not a literal palette value
-                        .foregroundStyle(Color(hex: reward.colorHex))
-                        .padding(bodySize * 0.06)
-                        // TC-002 OK: data-driven reward color background
-                        .background(Circle().fill(Color(hex: reward.colorHex).opacity(0.16)))
-                        .offset(anchor(for: index).offset(for: bodySize))
-                        .accessibilityHidden(true)
+                // MD-003: stickers hidden at < 80pt (avatar) per Discord/Apple Fitness pattern
+                if size >= 80 {
+                    ForEach(Array(equippedWearables.enumerated()), id: \.element.id) { index, reward in
+                        Image(systemName: reward.symbolName)
+                            .font(.system(size: bodySize * 0.15, weight: .bold))
+                            // TC-002 OK: data-driven reward color, not a literal palette value
+                            .foregroundStyle(Color(hex: reward.colorHex))
+                            .padding(bodySize * 0.06)
+                            // TC-002 OK: data-driven reward color background
+                            .background(Circle().fill(Color(hex: reward.colorHex).opacity(0.16)))
+                            .offset(anchor(for: index).offset(for: bodySize))
+                            .accessibilityHidden(true)
+                    }
                 }
             }
         }
@@ -3183,7 +3253,7 @@ struct NextUnlockView: View {
             }
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                     .fill(CozyPalette.quietContainer(colorScheme))
             )
             .accessibilityIdentifier("progression.nextUnlock")
@@ -3590,10 +3660,10 @@ struct RarityIcon: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                 .fill(Color(hex: rarity.colorHex).opacity(0.18))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .stroke(Color(hex: rarity.colorHex).opacity(0.35), lineWidth: 1)
                 )
             Image(systemName: symbol)

@@ -10,7 +10,6 @@ struct CozyTimeApp: App {
     @StateObject private var dataStore: AppDataStore
     @StateObject private var timerStore: FocusTimerStore
     @StateObject private var notifications: NotificationService
-    @StateObject private var statusBarController: StatusBarController
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
@@ -36,20 +35,13 @@ struct CozyTimeApp: App {
         let appTimerStore = FocusTimerStore(defaults: Self.timerDefaults())
         Self.seedUITestingRewardTimerIfNeeded(timerStore: appTimerStore)
         let appNotifications = NotificationService()
-        let appStatusBarController = StatusBarController(
-            dataStore: appDataStore,
-            timerStore: appTimerStore,
-            notifications: appNotifications
-        )
         _dataStore = StateObject(wrappedValue: appDataStore)
         _timerStore = StateObject(wrappedValue: appTimerStore)
         _notifications = StateObject(wrappedValue: appNotifications)
-        _statusBarController = StateObject(wrappedValue: appStatusBarController)
         appDelegate.configure(
             dataStore: appDataStore,
             timerStore: appTimerStore,
-            notifications: appNotifications,
-            statusBarController: appStatusBarController
+            notifications: appNotifications
         )
     }
 
@@ -58,16 +50,35 @@ struct CozyTimeApp: App {
             CozyMainWindowContent(
                 dataStore: dataStore,
                 timerStore: timerStore,
-                notifications: notifications,
-                statusBarController: statusBarController
+                notifications: notifications
             )
         }
         .defaultSize(width: 1120, height: 760)
         .defaultLaunchBehavior(.presented)
         .restorationBehavior(.disabled)
+        // macOS 15 #110 — let the window resize to fit its content. The
+        // app already enforces its own `.frame(minWidth:minHeight:)` in
+        // CozyMainWindowContent, so `.contentSize` keeps the system from
+        // forcing a fixed window geometry while still respecting our floor.
+        .windowResizability(.contentSize)
         .commands {
-            CozyCommands(timerStore: timerStore, notifications: notifications)
+            CozyCommands(dataStore: dataStore, timerStore: timerStore, notifications: notifications)
         }
+
+        // MenuBarExtra replaces the old NSStatusItem / NSPopover in
+        // StatusBarController. The label re-evaluates whenever timerStore
+        // publishes changes, so the menu-bar icon tracks the live timer.
+        // showMenuBarExtra mirrors the Settings toggle; the `isInserted`
+        // binding removes the item from the menu bar when toggled off.
+        MenuBarExtra(isInserted: $showMenuBarExtra) {
+            MenuBarPanelView()
+                .environmentObject(dataStore)
+                .environmentObject(timerStore)
+                .environmentObject(notifications)
+        } label: {
+            MenuBarLabel(timerStore: timerStore)
+        }
+        .menuBarExtraStyle(.window)
 
         Settings {
             SettingsScreen()
@@ -76,7 +87,7 @@ struct CozyTimeApp: App {
                 .environmentObject(notifications)
                 .preferredColorScheme(Self.preferredColorScheme(for: appearanceMode))
                 .tint(CozyTheme.named(selectedTheme).accent)
-                .frame(width: 560)
+                .frame(width: CozyLayout.sheetIdealWidthLarge)
         }
     }
 
@@ -110,6 +121,7 @@ struct CozyTimeApp: App {
         // Skip first-run onboarding in UI tests so existing flow tests don't
         // race the modal sheet.
         defaults.set(true, forKey: "hasCompletedFirstRun")
+        defaults.set(true, forKey: "hasSeenMenuBarHint")
     }
 
     private static func seedUITestingRewardTimerIfNeeded(timerStore: FocusTimerStore) {
@@ -153,11 +165,10 @@ private struct CozyMainWindowContent: View {
     @ObservedObject var dataStore: AppDataStore
     @ObservedObject var timerStore: FocusTimerStore
     @ObservedObject var notifications: NotificationService
-    @ObservedObject var statusBarController: StatusBarController
-    @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
     @AppStorage("hasCompletedFirstRun") private var hasCompletedFirstRun = false
+    @AppStorage("hasSeenCoachmark") private var hasSeenCoachmark = false
 
     var body: some View {
         RootView()
@@ -178,11 +189,25 @@ private struct CozyMainWindowContent: View {
                 FirstRunNamePrompt(hasCompleted: $hasCompletedFirstRun)
                     .interactiveDismissDisabled()
             }
-            .onAppear {
-                statusBarController.setVisible(showMenuBarExtra)
+            // UX HIGH #79: 3-step coachmark tour, only after the
+            // mascot-name sheet finishes (hasCompletedFirstRun == true)
+            // and only once per install (hasSeenCoachmark).
+            .sheet(isPresented: Binding(
+                get: { !CozyTimeApp.isUITesting && hasCompletedFirstRun && !hasSeenCoachmark },
+                set: { _ in }
+            )) {
+                FirstRunCoachmarkSheet()
             }
-            .onChange(of: showMenuBarExtra) { _, isVisible in
-                statusBarController.setVisible(isVisible)
+            .onAppear {
+                // Feature #89: record this open AFTER the sleep check has had a
+                // chance to read the previous value. `lastOpenedDate` is read by
+                // `FirstSessionCard.isMochiSleeping` on the same appear cycle, so
+                // we update here (after the view hierarchy is already on-screen).
+                //
+                // Feature #104: check for surprise drop BEFORE recordAppOpen() so
+                // the gap is measured against the PREVIOUS open, not the current one.
+                dataStore.checkAndFireSurpriseDrop()
+                dataStore.recordAppOpen()
             }
             .onReceive(NotificationCenter.default.publisher(for: .cozyRootViewReady)) { _ in
                 CozyAppDelegate.flushPendingSectionOpen()
@@ -200,18 +225,15 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
     @MainActor private static var dataStore: AppDataStore?
     @MainActor private static var timerStore: FocusTimerStore?
     @MainActor private static var notifications: NotificationService?
-    @MainActor private static var statusBarController: StatusBarController?
     @MainActor private static var fallbackMainWindow: NSWindow?
 
     @MainActor
     func configure(dataStore: AppDataStore,
                    timerStore: FocusTimerStore,
-                   notifications: NotificationService,
-                   statusBarController: StatusBarController) {
+                   notifications: NotificationService) {
         Self.dataStore = dataStore
         Self.timerStore = timerStore
         Self.notifications = notifications
-        Self.statusBarController = statusBarController
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -327,20 +349,21 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
     private static func presentFallbackMainWindow() -> Bool {
         guard let dataStore,
               let timerStore,
-              let notifications,
-              let statusBarController else {
+              let notifications else {
             return false
         }
 
         let rootView = CozyMainWindowContent(
             dataStore: dataStore,
             timerStore: timerStore,
-            notifications: notifications,
-            statusBarController: statusBarController
+            notifications: notifications
         )
         let hostingController = NSHostingController(rootView: rootView)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 820)
-        let windowSize = NSSize(width: 1120, height: 760)
+        let windowSize = NSSize(
+            width: min(1120, max(720, screenFrame.width - 80)),
+            height: min(760, max(600, screenFrame.height - 80))
+        )
         let origin = NSPoint(
             x: screenFrame.midX - windowSize.width / 2,
             y: screenFrame.midY - windowSize.height / 2
@@ -352,7 +375,7 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
             defer: false
         )
         window.title = "CozyTime"
-        window.minSize = NSSize(width: 1120, height: 720)
+        window.minSize = NSSize(width: 720, height: 600)
         window.contentViewController = hostingController
         window.setFrameAutosaveName("CozyTimeMainWindow")
         fallbackMainWindow = window
@@ -389,6 +412,49 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
     }
 }
 
+// Dynamic menu-bar label: shows the live countdown when a timer is active,
+// a "save" prompt when the session needs review, and a paw icon at rest.
+// Extracted as a View so it can observe timerStore via @ObservedObject without
+// the SceneBuilder having to bridge into ViewBuilder inline.
+private struct MenuBarLabel: View {
+    @ObservedObject var timerStore: FocusTimerStore
+
+    var body: some View {
+        let title = title(at: timerStore.currentDate)
+        let symbol = timerStore.needsCompletionReview ? "pawprint.fill" : timerStore.isActive ? "timer" : "pawprint.fill"
+
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+            if !title.isEmpty {
+                Text(title)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityLabel(accessibilityLabel(at: timerStore.currentDate))
+    }
+
+    private func title(at date: Date) -> String {
+        if timerStore.needsCompletionReview {
+            return "save"
+        }
+        if timerStore.isActive {
+            return timerStore.menuBarTitle(at: date)
+        }
+        return ""
+    }
+
+    private func accessibilityLabel(at date: Date) -> String {
+        if timerStore.needsCompletionReview {
+            return "CozyTime: \(timerStore.activeTaskTitle) is ready to save"
+        }
+        if timerStore.isActive {
+            return "CozyTime: \(timerStore.activeTaskTitle), \(timerStore.menuBarTitle(at: date)) remaining"
+        }
+        return "CozyTime"
+    }
+}
+
 // First-run onboarding sheet — researched recipe (M3). NN/g on mobile
 // onboarding: "Avoid feature-promotion onboarding at first launch... minimize
 // the number of cards to only focus on need-to-know information." Finch's
@@ -398,6 +464,9 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
 struct FirstRunNamePrompt: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    // UX LOW #108 — Increase Contrast deepens the first-run sheet outline so
+    // the modal stays clearly separated from the canvas behind it.
+    @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("mascotName") private var mascotName = "Mochi"
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
     @State private var draft = "Mochi"
@@ -434,6 +503,15 @@ struct FirstRunNamePrompt: View {
                         .foregroundStyle(CozyPalette.secondaryText(colorScheme))
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
+                    // UX LOW #105 — surface the Settings shortcut up front so
+                    // the user knows the rename path stays one chord away
+                    // after first-run, without having to hunt for it later.
+                    Text("Rename anytime in Settings (\u{2318},).")
+                        .font(CozyType.captionStrong)
+                        .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Rename anytime in Settings, Command Comma.")
                 }
 
                 TextField("Mochi", text: $draft)
@@ -460,7 +538,14 @@ struct FirstRunNamePrompt: View {
             }
             .padding(32)
         }
-        .frame(minWidth: 400, idealWidth: 400, maxWidth: 440, minHeight: 440, idealHeight: 460, maxHeight: 560)
+        .frame(
+            minWidth: CozyLayout.sheetIdealWidthSmall,
+            idealWidth: CozyLayout.sheetIdealWidthMedium,
+            maxWidth: CozyLayout.sheetIdealWidthMedium,
+            minHeight: CozyLayout.sheetIdealHeightSmall,
+            idealHeight: CozyLayout.sheetIdealHeightMedium,
+            maxHeight: CozyLayout.sheetIdealHeightLarge
+        )
         // Card-style sheet with hairline border — clearly separates the
         // modal from the canvas behind it AND gives the text content a
         // background with documented contrast against primaryText.
@@ -469,7 +554,7 @@ struct FirstRunNamePrompt: View {
                 .fill(CozyPalette.cardFill(colorScheme))
                 .overlay(
                     RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
-                        .stroke(CozyPalette.cardBorder(colorScheme), lineWidth: 1)
+                        .stroke(CozyPalette.cardBorder(colorScheme, contrast: contrast), lineWidth: 1)
                 )
                 .shadow(color: CozyPalette.lofiInk.opacity(colorScheme == .dark ? 0.30 : 0.08), radius: 18, y: 8)
         )

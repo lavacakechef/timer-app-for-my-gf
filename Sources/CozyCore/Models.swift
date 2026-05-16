@@ -276,18 +276,53 @@ public struct CozyDatabase: Codable, Equatable, Sendable {
     public var focusSessions: [FocusSession]
     public var habits: [Habit]
     public var rewards: [RewardItem]
+    /// Accumulated bonus paws from idle-return surprise drops (#104).
+    /// Purely additive — included in `ProgressionSummary.coinsEarned`.
+    /// Defaults to 0 so existing JSON/SwiftData stores decode cleanly.
+    public var bonusPaws: Int
 
     public init(
         tasks: [TaskItem] = [],
         countdowns: [CountdownEvent] = [],
         focusSessions: [FocusSession] = [],
         habits: [Habit] = [],
-        rewards: [RewardItem] = []
+        rewards: [RewardItem] = [],
+        bonusPaws: Int = 0
     ) {
         self.tasks = tasks
         self.countdowns = countdowns
         self.focusSessions = focusSessions
         self.habits = habits
         self.rewards = rewards
+        self.bonusPaws = bonusPaws
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tasks
+        case countdowns
+        case focusSessions
+        case habits
+        case rewards
+        case bonusPaws
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tasks = try container.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? []
+        countdowns = try container.decodeIfPresent([CountdownEvent].self, forKey: .countdowns) ?? []
+        focusSessions = try container.decodeIfPresent([FocusSession].self, forKey: .focusSessions) ?? []
+        habits = try container.decodeIfPresent([Habit].self, forKey: .habits) ?? []
+        rewards = try container.decodeIfPresent([RewardItem].self, forKey: .rewards) ?? []
+        bonusPaws = try container.decodeIfPresent(Int.self, forKey: .bonusPaws) ?? 0
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(tasks, forKey: .tasks)
+        try container.encode(countdowns, forKey: .countdowns)
+        try container.encode(focusSessions, forKey: .focusSessions)
+        try container.encode(habits, forKey: .habits)
+        try container.encode(rewards, forKey: .rewards)
+        try container.encode(bonusPaws, forKey: .bonusPaws)
     }
 }

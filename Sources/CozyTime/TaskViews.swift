@@ -36,6 +36,7 @@ struct TodayView: View {
                     mascotState: todayMascotState
                 )
 
+                MenuBarHintBanner()
                 FirstSessionCard()
                 QuickAddBar(defaultDueDate: Date())
                 DailyQuestCard()
@@ -83,6 +84,58 @@ struct TodayView: View {
         case .finalMinute: return .landing
         case .wrap: return .complete
         case .breakTime: return .breakTime
+        }
+    }
+}
+
+// U3.5 — one-time menu-bar discovery hint shown near the top of Today.
+// Auto-dismisses after 12 s; user can also tap × immediately.
+private struct MenuBarHintBanner: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("hasSeenMenuBarHint") private var hasSeenHint = false
+    @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
+    @State private var visible = false
+
+    var body: some View {
+        if !hasSeenHint && showMenuBarExtra {
+            HStack(spacing: 8) {
+                Image(systemName: "menubar.dock.rectangle")
+                    .font(CozyType.body)
+                    .foregroundStyle(.secondary)
+                Text("Mochi lives in your menu bar — click the icon to quick-focus anytime.")
+                    .font(CozyType.caption)
+                    .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button {
+                    withAnimation(CozyMotion.gentle(reduceMotion, duration: 0.25)) { hasSeenHint = true }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(CozyType.captionStrong)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss hint")
+            }
+            .padding(.horizontal, CozyLayout.cardPadding)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: CozyLayout.subCardRadius, style: .continuous)
+                    .fill(CozyPalette.quietContainer(colorScheme))
+            )
+            .opacity(visible ? 1 : 0)
+            .onAppear {
+                // Small delay so it doesn't flash in before the view settles
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    withAnimation(CozyMotion.gentle(reduceMotion, duration: 0.3)) { visible = true }
+                    // Auto-dismiss after 12s — user shouldn't have to act
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
+                        withAnimation(CozyMotion.gentle(reduceMotion, duration: 0.3)) { hasSeenHint = true }
+                    }
+                }
+            }
+            .transition(.opacity)
         }
     }
 }
@@ -170,25 +223,52 @@ struct TasksView: View {
                 QuickAddBar(defaultDueDate: timeFilter == .upcoming
                     ? Calendar.autoupdatingCurrent.date(byAdding: .day, value: 1, to: Date())
                     : nil)
-                // Time filter — All / Today / Upcoming / Done. Sits above the
-                // list-name filter so the user can stack "Today + Inbox", etc.
-                CozySegmentedControl(
-                    options: TaskTimeFilter.allCases.map { CozySegmentOption($0.rawValue, title: $0.label) },
-                    selection: Binding(
-                        get: { timeFilter.rawValue },
-                        set: { timeFilter = TaskTimeFilter(rawValue: $0) ?? .all }
-                    ),
-                    minSegmentWidth: 88
-                )
-                .accessibilityIdentifier("tasks.timeFilter")
-                ScrollView(.horizontal, showsIndicators: false) {
+                // Single filter row: time segments + list chip — replaces two stacked segmented controls.
+                HStack(spacing: 12) {
                     CozySegmentedControl(
-                        options: listNames.map { CozySegmentOption($0, title: $0) },
-                        selection: $listFilter,
-                        minSegmentWidth: 94
+                        options: TaskTimeFilter.allCases.map { CozySegmentOption($0.rawValue, title: $0.label) },
+                        selection: Binding(
+                            get: { timeFilter.rawValue },
+                            set: { timeFilter = TaskTimeFilter(rawValue: $0) ?? .all }
+                        ),
+                        minSegmentWidth: 88
                     )
+                    .accessibilityIdentifier("tasks.timeFilter")
+
+                    Spacer(minLength: 0)
+
+                    Menu {
+                        ForEach(listNames, id: \.self) { name in
+                            Button {
+                                listFilter = name
+                            } label: {
+                                if name == listFilter {
+                                    Label(name, systemImage: "checkmark")
+                                } else {
+                                    Text(name)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "tray.full.fill")
+                                .font(.caption.weight(.semibold))
+                            Text(listFilter)
+                                .font(CozyType.captionStrong)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+                        .padding(.vertical, CozyLayout.badgePaddingLargeV)
+                        .frame(height: 28)
+                        .background(Capsule().fill(.quaternary))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityIdentifier("tasks.listFilter")
                 }
-                .accessibilityIdentifier("tasks.listFilter")
                 TaskList(tasks: filteredTasks)
             }
             .cozyPageFrame()
@@ -198,6 +278,10 @@ struct TasksView: View {
 }
 
 struct QuickAddBar: View {
+    /// Local focus targets so the title field can grab focus on appear
+    /// (UX HIGH #87 — kill the extra click on sheet open).
+    private enum Field: Hashable { case title }
+
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var timerStore: FocusTimerStore
     @EnvironmentObject private var notifications: NotificationService
@@ -216,6 +300,7 @@ struct QuickAddBar: View {
     /// the picker is replaced with an inline text field.
     @State private var isCreatingNewList = false
     @State private var newListDraft = ""
+    @FocusState private var initialFocus: Field?
 
     /// Existing lists deduplicated + sorted, with "Inbox" pinned first.
     private var existingLists: [String] {
@@ -242,33 +327,54 @@ struct QuickAddBar: View {
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-                    CozyResponsiveFieldRow {
-                        listField
-                        dueDateField
-                        durationStepper
-                        priorityPicker
-                    }
+                    PropertyChipBar(
+                        listName: $listName,
+                        hasDueDate: $hasDueDate,
+                        dueDate: $dueDate,
+                        estimatedMinutes: $estimatedMinutes,
+                        priority: $priority,
+                        isCreatingNewList: $isCreatingNewList,
+                        newListDraft: $newListDraft,
+                        existingLists: existingLists,
+                        dueSummary: dueSummary,
+                        priorityLabel: priorityLabel,
+                        onCommitNewList: commitNewList
+                    )
 
                     if hasDueDate {
                         dueDateQuickChoicesRow
                             .accessibilityIdentifier("quickAdd.dueDate.quickPicks")
                     }
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
             } else {
                 Label("\(cleanListName) · \(dueSummary) · \(estimatedMinutes)m · \(priorityLabel)", systemImage: "slider.horizontal.3")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .accessibilityIdentifier("quickAdd.summary")
             }
 
             if let lastAddedTask {
                 quickAddFeedback(task: lastAddedTask)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
         .cozyCard()
         .animation(CozyMotion.snappy(reduceMotion, duration: 0.18), value: isExpanded)
+        // UX HIGH #87 — auto-focus primary text field on appear so the user
+        // can start typing without an extra click.
+        .onAppear { initialFocus = .title }
+        // UX HIGH #85 — ⌘N (when Today/Tasks selected) moves focus into
+        // the inline title field instead of opening a separate composer.
+        // Mirrors ⌘L (.cozyFocusQuickAdd) below — same FocusState target.
+        .onReceive(NotificationCenter.default.publisher(for: .cozyNewTask)) { _ in
+            initialFocus = .title
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cozyFocusQuickAdd)) { _ in
+            initialFocus = .title
+        }
     }
 
     private var titleField: some View {
@@ -280,6 +386,7 @@ struct QuickAddBar: View {
         ) {
             TextField("Add a tiny task...", text: $title)
                 .onSubmit(addTask)
+                .focused($initialFocus, equals: .title)
                 .accessibilityIdentifier("quickAdd.title")
                 .cozyTextInput(minWidth: 220, alignment: .leading)
         }
@@ -301,89 +408,6 @@ struct QuickAddBar: View {
         }
     }
 
-    private var listField: some View {
-        CozyLabeledControl(title: "List", symbolName: "tray.full") {
-            // Picker over existing lists + "+ New list" option that switches to a TextField.
-            // The user explicitly asked for a dropdown when picking an existing list, with
-            // typing reserved for new-list creation. (Free-typing the same name every time
-            // led to mis-spelled duplicates like "inbox" vs "Inbox".)
-            if isCreatingNewList {
-                HStack(spacing: 6) {
-                    TextField("New list name", text: $newListDraft)
-                        .accessibilityIdentifier("quickAdd.newList")
-                        .cozyTextInput(width: 140, alignment: .leading)
-                        .onSubmit { commitNewList() }
-                    Button {
-                        commitNewList()
-                    } label: {
-                        Image(systemName: "checkmark")
-                            .frame(width: 16, height: 16)
-                    }
-                    .cozyIconButton(size: CozyLayout.compactHitSize)
-                    .disabled(newListDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help("Save new list")
-                    Button {
-                        isCreatingNewList = false
-                        newListDraft = ""
-                    } label: {
-                        Image(systemName: "xmark")
-                            .frame(width: 16, height: 16)
-                    }
-                    .cozyIconButton(size: CozyLayout.compactHitSize)
-                    .help("Cancel")
-                }
-            } else {
-                // Visually-obvious dropdown affordance — gf's screenshot showed the
-                // earlier version reading as a text field because the chevron was
-                // caption-weight and tiny. Now: leading tray icon, bold body-weight
-                // list name, and a prominent up/down chevron pair that says
-                // "this is a Menu, click it." Native `.menuIndicator(.visible)` so
-                // SwiftUI's own indicator backs up the custom chevron.
-                Menu {
-                    ForEach(existingLists, id: \.self) { name in
-                        Button {
-                            listName = name
-                        } label: {
-                            if name == listName {
-                                Label(name, systemImage: "checkmark")
-                            } else {
-                                Text(name)
-                            }
-                        }
-                    }
-                    Divider()
-                    Button {
-                        newListDraft = ""
-                        isCreatingNewList = true
-                    } label: {
-                        Label("New list…", systemImage: "plus")
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "tray.full.fill")
-                            .font(CozyType.body.weight(.semibold))
-                            .foregroundStyle(CozyPalette.focusJade)
-                        Text(listName)
-                            .font(CozyType.body.weight(.semibold))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.footnote.weight(.bold))
-                            .foregroundStyle(CozyPalette.focusJade)
-                    }
-                    .frame(minWidth: 150, minHeight: CozyLayout.controlHeight, alignment: .leading)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .cozyControlShell(minWidth: 150, alignment: .leading)
-                .accessibilityIdentifier("quickAdd.list")
-                .help(existingLists.count > 1
-                    ? "Pick from \(existingLists.count) lists or add a new one"
-                    : "Pick a list or create a new one")
-            }
-        }
-    }
-
     private func commitNewList() {
         let trimmed = newListDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -392,53 +416,8 @@ struct QuickAddBar: View {
         isCreatingNewList = false
     }
 
-    private var dueDateField: some View {
-        CozyLabeledControl(title: "Due", symbolName: "calendar", minWidth: hasDueDate ? 230 : 190) {
-            VStack(alignment: .leading, spacing: 8) {
-                CozyToggleRow(
-                    title: hasDueDate ? dueSummary : "No due date",
-                    symbolName: "calendar",
-                    subtitle: hasDueDate ? "Click date to change it" : "Keep this task flexible",
-                    isOn: $hasDueDate
-                )
-                .accessibilityIdentifier("quickAdd.hasDueDate")
-                if hasDueDate {
-                    CozyDateInput(date: $dueDate, label: "Task due date", includeInlineQuickChoices: false)
-                        .accessibilityIdentifier("quickAdd.dueDate")
-                }
-            }
-        }
-    }
-
     private var dueDateQuickChoicesRow: some View {
         CozyDateInput(date: $dueDate, label: "Task due date", includeInlineQuickChoices: false).quickChoicesRow
-    }
-
-    private var durationStepper: some View {
-        CozyLabeledControl(title: "Estimate", symbolName: "clock") {
-            CozyStepperField(value: $estimatedMinutes, range: 5...180, step: 5) { "\($0)m" }
-                .accessibilityIdentifier("quickAdd.duration")
-        }
-    }
-
-    private var priorityPicker: some View {
-        CozyLabeledControl(title: "Priority", symbolName: "flag") {
-            // Segment labels now match PriorityBadge's mapping
-            // (0 = Low, 1 = Medium, 2 = High). Previously the segment said
-            // "Top" for value 2 while the resulting badge displayed "High" —
-            // the same priority shown under two different names depending on
-            // which surface you looked at.
-            CozySegmentedControl(
-                options: [
-                    CozySegmentOption(0, title: "Low"),
-                    CozySegmentOption(1, title: "Med"),
-                    CozySegmentOption(2, title: "High")
-                ],
-                selection: $priority,
-                minSegmentWidth: 52
-            )
-                .accessibilityIdentifier("quickAdd.priority")
-        }
     }
 
     private var addButton: some View {
@@ -544,9 +523,224 @@ struct QuickAddBar: View {
             await notifications.schedule(draft)
         }
     }
+
+    private struct PropertyChipBar: View {
+        @Binding var listName: String
+        @Binding var hasDueDate: Bool
+        @Binding var dueDate: Date
+        @Binding var estimatedMinutes: Int
+        @Binding var priority: Int
+        @Binding var isCreatingNewList: Bool
+        @Binding var newListDraft: String
+
+        let existingLists: [String]
+        let dueSummary: String
+        let priorityLabel: String
+        let onCommitNewList: () -> Void
+
+        @State private var showDuePopover = false
+        @State private var showDurationPopover = false
+        @Environment(\.colorScheme) private var colorScheme
+
+        var body: some View {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    chips
+                }
+
+                LazyVGrid(columns: CozyLayout.adaptiveColumns(minimum: 160), spacing: 8) {
+                    chips
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        @ViewBuilder
+        private var chips: some View {
+            listChip
+            dueChip
+            durationChip
+            priorityChip
+        }
+
+        @ViewBuilder
+        private var listChip: some View {
+            if isCreatingNewList {
+                HStack(spacing: 6) {
+                    Image(systemName: "tray.full.fill")
+                        .font(CozyType.captionStrong)
+                        .foregroundStyle(CozyPalette.focusJade)
+                    TextField("New list name", text: $newListDraft)
+                        .font(CozyType.captionStrong)
+                        .textFieldStyle(.plain)
+                        .frame(width: 120)
+                        .onSubmit { onCommitNewList() }
+                    Button { onCommitNewList() } label: {
+                        Image(systemName: "checkmark").font(.caption2.weight(.bold))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(newListDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button { isCreatingNewList = false; newListDraft = "" } label: {
+                        Image(systemName: "xmark").font(.caption2.weight(.bold))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+                .padding(.vertical, CozyLayout.badgePaddingLargeV)
+                .frame(height: 28)
+                .background(Capsule().fill(.quaternary))
+            } else {
+                Menu {
+                    ForEach(existingLists, id: \.self) { name in
+                        Button { listName = name } label: {
+                            if name == listName { Label(name, systemImage: "checkmark") } else { Text(name) }
+                        }
+                    }
+                    Divider()
+                    Button { newListDraft = ""; isCreatingNewList = true } label: {
+                        Label("New list…", systemImage: "plus")
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "tray.full.fill").foregroundStyle(CozyPalette.focusJade)
+                        Text(listName)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 118, alignment: .leading)
+                        Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                    }
+                    .font(CozyType.captionStrong)
+                    .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+                    .padding(.vertical, CozyLayout.badgePaddingLargeV)
+                    .frame(height: 28)
+                    .background(Capsule().fill(.quaternary))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .accessibilityIdentifier("quickAdd.list")
+            }
+        }
+
+        private var dueChip: some View {
+            Button { showDuePopover = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar").foregroundStyle(hasDueDate ? .primary : .secondary)
+                    Text(hasDueDate ? dueSummary : "No date")
+                        .foregroundStyle(hasDueDate ? .primary : .secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(CozyType.captionStrong)
+                .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+                .padding(.vertical, CozyLayout.badgePaddingLargeV)
+                .frame(height: 28)
+                .background(Capsule().fill(.quaternary))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("quickAdd.dueDateChip")
+            .popover(isPresented: $showDuePopover, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 12) {
+                    CozyToggleRow(
+                        title: hasDueDate ? dueSummary : "No due date",
+                        symbolName: "calendar",
+                        subtitle: hasDueDate ? "Click date to change it" : "Keep this task flexible",
+                        isOn: $hasDueDate
+                    )
+                    .accessibilityIdentifier("quickAdd.hasDueDate")
+                    if hasDueDate {
+                        CozyDateInput(date: $dueDate, label: "Task due date", includeInlineQuickChoices: false)
+                            .accessibilityIdentifier("quickAdd.dueDate")
+                    }
+                }
+                .padding(CozyLayout.cardPadding)
+                .frame(minWidth: 240)
+            }
+        }
+
+        private var durationChip: some View {
+            Button { showDurationPopover = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "clock")
+                    Text("\(estimatedMinutes)m")
+                        .lineLimit(1)
+                }
+                .font(CozyType.captionStrong)
+                .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+                .padding(.vertical, CozyLayout.badgePaddingLargeV)
+                .frame(height: 28)
+                .background(Capsule().fill(.quaternary))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("quickAdd.durationChip")
+            .popover(isPresented: $showDurationPopover, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Estimate").font(CozyType.captionStrong).foregroundStyle(.secondary)
+                    CozyStepperField(value: $estimatedMinutes, range: 5...180, step: 5) { "\($0)m" }
+                        .accessibilityIdentifier("quickAdd.duration")
+                }
+                .padding(CozyLayout.cardPadding)
+                .frame(minWidth: 160)
+            }
+        }
+
+        private var priorityChip: some View {
+            Menu {
+                Button { priority = 0 } label: {
+                    if priority == 0 { Label("Low", systemImage: "checkmark") } else { Text("Low") }
+                }
+                Button { priority = 1 } label: {
+                    if priority == 1 { Label("Medium", systemImage: "checkmark") } else { Text("Medium") }
+                }
+                Button { priority = 2 } label: {
+                    if priority == 2 { Label("High", systemImage: "checkmark") } else { Text("High") }
+                }
+                Button { priority = 3 } label: {
+                    if priority == 3 { Label("Urgent", systemImage: "checkmark") } else { Text("Urgent") }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: priorityIcon).foregroundStyle(priorityColor)
+                    Text(priorityLabel)
+                        .foregroundStyle(priorityColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                }
+                .font(CozyType.captionStrong)
+                .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+                .padding(.vertical, CozyLayout.badgePaddingLargeV)
+                .frame(height: 28)
+                .background(Capsule().fill(.quaternary))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .accessibilityIdentifier("quickAdd.priority")
+        }
+
+        private var priorityIcon: String {
+            switch priority {
+            case 3...: "exclamationmark.triangle.fill"
+            case 2: "exclamationmark.circle.fill"
+            case 1: "circle.fill"
+            default: "circle"
+            }
+        }
+
+        private var priorityColor: Color {
+            switch priority {
+            case 3...: CozyPalette.overdue
+            case 2: CozyPalette.persimmon
+            case 1: CozyPalette.wasabiText
+            default: .secondary
+            }
+        }
+    }
 }
 
 struct FirstSessionCard: View {
+    /// Auto-focus target for the starter title field (UX HIGH #87).
+    private enum Field: Hashable { case title }
+
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var timerStore: FocusTimerStore
     @EnvironmentObject private var notifications: NotificationService
@@ -563,6 +757,11 @@ struct FirstSessionCard: View {
     /// started a session, which was the strongest visible affordance on cold-open committing
     /// the user to a 25-minute commitment without warning.
     @State private var selectedMinutes: Int = 25
+    @FocusState private var initialFocus: Field?
+    /// Surprise drop (#104): true while the idle-return paw toast is shown.
+    @State private var showSurpriseDropToast = false
+    /// Paw count captured when the drop fires (kept stable during dismiss animation).
+    @State private var surpriseDropCount = 0
 
     private var theme: CozyTheme {
         CozyTheme.named(selectedTheme)
@@ -572,6 +771,11 @@ struct FirstSessionCard: View {
         dataStore.focusSessions
             .filter { Calendar.autoupdatingCurrent.isDateInToday($0.reportingDate) }
             .reduce(0) { $0 + $1.completedMinutes }
+    }
+
+    private var isMochiSleeping: Bool {
+        guard let last = dataStore.lastOpenedDate else { return false }
+        return Date().timeIntervalSince(last) > 24 * 3600
     }
 
     private var heroMessage: String {
@@ -597,6 +801,55 @@ struct FirstSessionCard: View {
             }
         }
         .cozyHeroCard()
+        // UX HIGH #87 — primary text field gets focus on appear.
+        .onAppear { initialFocus = .title }
+        // Feature #104: show paw-drop toast when Mochi drops a surprise on idle-return.
+        .overlay(alignment: .bottom) {
+            if showSurpriseDropToast {
+                surpriseDropToast
+                    .padding(.bottom, CozyLayout.cardPadding)
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(CozyMotion.gentle(reduceMotion), value: showSurpriseDropToast)
+        .onReceive(dataStore.$surpriseDropPaws) { paws in
+            guard let paws else { return }
+            surpriseDropCount = paws
+            showSurpriseDropToast = true
+            // Clear the published value so re-renders don't re-trigger.
+            dataStore.surpriseDropPaws = nil
+            // Auto-dismiss after 3.5 seconds.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+                withAnimation(CozyMotion.gentle(reduceMotion)) {
+                    showSurpriseDropToast = false
+                }
+            }
+        }
+    }
+
+    private var surpriseDropToast: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pawprint.fill")
+                .font(CozyType.controlStrong)
+                .foregroundStyle(theme.reward)
+            Text("\(mascotName) found \(surpriseDropCount) paw\(surpriseDropCount == 1 ? "" : "s") while you were away!")
+                .font(CozyType.captionStrong)
+                .foregroundStyle(CozyPalette.primaryText(colorScheme))
+        }
+        .padding(.horizontal, CozyLayout.badgePaddingLargeH)
+        .padding(.vertical, CozyLayout.badgePaddingMediumV)
+        .background(
+            RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
+                .fill(CozyPalette.cardFill(colorScheme))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
+                        .stroke(theme.accent.opacity(0.32), lineWidth: 1)
+                )
+                .shadow(color: CozyPalette.softShadow(colorScheme, active: true), radius: 12, y: 4)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(mascotName) found \(surpriseDropCount) paw\(surpriseDropCount == 1 ? "" : "s") while you were away")
+        .accessibilityIdentifier("surpriseDrop.toast")
     }
 
     private var heroMascotPanel: some View {
@@ -608,6 +861,12 @@ struct FirstSessionCard: View {
                 Text(timerStore.isActive ? "Keeping time" : "Ready to start")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+                if isMochiSleeping {
+                    Label("Mochi missed you! Welcome back.", systemImage: "zzz")
+                        .font(CozyType.captionStrong)
+                        .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+                        .multilineTextAlignment(.center)
+                }
             }
             .multilineTextAlignment(.center)
             themeBadge
@@ -616,7 +875,13 @@ struct FirstSessionCard: View {
         .frame(maxWidth: .infinity, minHeight: 238)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(CozyPalette.quietContainer(colorScheme))
+                .fill(
+                    LinearGradient(
+                        colors: [theme.surfaceTint.opacity(0.18), theme.surfaceTint.opacity(0.08)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -626,13 +891,23 @@ struct FirstSessionCard: View {
 
     private var mascotButton: some View {
         Button {
-            withAnimation(CozyMotion.spring(reduceMotion, response: 0.28, damping: 0.62)) {
+            withAnimation(CozyMotion.spring(reduceMotion, response: 0.38, damping: 0.58)) {
                 petPulse.toggle()
                 messageIndex += 1
             }
         } label: {
-            EquippedMascotView(state: timerStore.isActive ? activeMascotState : .idle, size: .hero, rewards: dataStore.rewards)
+            ZStack {
+                // Soft ambient glow ring behind the mascot (#59 polish)
+                Circle()
+                    .fill(theme.accent.opacity(0.08))
+                    .frame(width: 148, height: 148)
+                EquippedMascotView(
+                    state: isMochiSleeping ? .idle : (timerStore.isActive ? activeMascotState : .idle),
+                    size: .hero,
+                    rewards: dataStore.rewards
+                )
                 .scaleEffect(petPulse ? 1.06 : 1.0)
+            }
         }
         .cozyPressable(pressedScale: 0.94, hoverScale: 1.035)
         .contentShape(Circle())
@@ -686,6 +961,7 @@ struct FirstSessionCard: View {
         CozyLabeledControl(title: "Focus title", symbolName: "sparkle.magnifyingglass", minWidth: 220) {
             TextField("What are you focusing on?", text: $starterTitle)
                 .onSubmit { start(minutes: 25) }
+                .focused($initialFocus, equals: .title)
                 .accessibilityIdentifier("firstSession.title")
                 .cozyTextInput(minWidth: 220, minHeight: 38, alignment: .leading)
         }
@@ -694,6 +970,12 @@ struct FirstSessionCard: View {
 
     private var presetButtons: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // UX MED #93 — "Just start" 1-minute preset for anxiety-prone moments
+            // (Centered's precedent). Rendered as a soft chip above the canonical
+            // CozyDurationPicker because the picker's preset list is internally
+            // hardcoded; this gives a fast "even one minute counts" escape hatch.
+            justStartChip
+
             // CozyDurationPicker: shared chip + slider widget. Same recipe used by
             // FocusSetupCard so duration-picking is one component, not two.
             CozyDurationPicker(
@@ -715,6 +997,50 @@ struct FirstSessionCard: View {
             .help(timerStore.canStartNewSession ? "Start a focus session at the selected length" : "A timer is already active")
             .accessibilityIdentifier("firstSession.start")
         }
+    }
+
+    // UX MED #93 — One-minute "Just start" chip. Sits above CozyDurationPicker
+    // because the picker's preset list (5/15/25/50) is internally hardcoded in
+    // DesignSystem and tapping this chip simply pre-selects 1m in the same
+    // shared `selectedMinutes` state, so the Start CTA below now reads
+    // "Start 1m focus" without any extra wiring. Caption "Just start · 1m"
+    // matches the task spec; tooltip nudges anxiety-prone users.
+    private var justStartChip: some View {
+        let isSelected = selectedMinutes == 1
+        // Use the active theme's on-accent foreground so the label keeps a
+        // ≥4.5:1 ratio over `focusJade` in both light and dark mode (the same
+        // helper CozyDurationChip uses for its selected state, but resolved
+        // here at the call site since this chip lives outside DesignSystem).
+        let onAccent = theme.foregroundOnAccent(colorScheme)
+        return Button {
+            selectedMinutes = 1
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.caption.weight(.black))
+                Text("Just start · 1m")
+                    .font(CozyType.captionStrong)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+            .padding(.vertical, CozyLayout.badgePaddingMediumV)
+            .foregroundStyle(isSelected ? onAccent : CozyPalette.focusJade)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isSelected ? CozyPalette.focusJade : CozyPalette.focusJade.opacity(colorScheme == .dark ? 0.18 : 0.12))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(isSelected ? onAccent.opacity(0.30) : CozyPalette.focusJade.opacity(0.30),
+                            lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .cozyPressable(pressedScale: 0.965, hoverScale: 1.015)
+        .help("Even one minute counts.")
+        .accessibilityLabel("Just start, 1 minute focus\(isSelected ? ", selected" : "")")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("firstSession.justStart")
     }
 
     private var metricColumns: [GridItem] {
@@ -926,17 +1252,47 @@ struct TaskList: View {
             VStack(spacing: 12) {
                 EmptyStateView(
                     title: "A spot for your first task",
-                    message: "Capture one small next step — anything that nudges the day forward.",
+                    message: "Capture one small next step — anything that nudges the day forward. Drop text here to turn each line into a task.",
                     mascotState: .idle,
                     eyebrow: "Tasks"
                 )
                 .frame(minHeight: 180)
                 StarterTaskChips()
             }
+            // UX MED #99 — empty state accepts dropped text. Each non-empty
+            // line becomes a TaskItem so the user can drag a checklist from
+            // Notes / Reminders / Safari into the empty slot without typing.
+            .dropDestination(for: String.self) { items, _ in
+                let lines = items
+                    .flatMap { $0.split(whereSeparator: \.isNewline) }
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                guard !lines.isEmpty else { return false }
+                for line in lines {
+                    dataStore.addTask(TaskItem(title: line, dueDate: Date(), priority: 1))
+                }
+                CozyFeedback.play(.add)
+                return true
+            }
+            .accessibilityHint("Drop text here to create tasks, one per line.")
         } else {
+            // UX HIGH #86 — drag-to-reorder. `.onMove` is wired here so the
+            // affordance is in place; it activates fully when the data layer
+            // gains a `moveTask(from:to:)` method.
+            // TODO(UX-86): add `dataStore.moveTask(from: IndexSet, to: Int)`
+            //   on AppDataStore (both JSON + SwiftData backends) and persist a
+            //   `sortIndex` on TaskItem so reorder survives relaunch. Once that
+            //   lands, drop the LazyVStack in favour of `List` (the visual edit
+            //   handle SwiftUI ships only renders inside List) and call
+            //   `dataStore.moveTask(from: source, to: destination)` below.
             LazyVStack(spacing: 10) {
                 ForEach(tasks) { task in
                     TaskRow(task: task)
+                }
+                .onMove { _, _ in
+                    // TODO(UX-86): persist sortIndex in TaskItem + dataStore.
+                    // No-op until `dataStore.moveTask` exists; in-memory only
+                    // because `tasks` here is a computed read-only slice.
                 }
             }
         }
@@ -987,6 +1343,10 @@ private struct TaskMetadataItem: Identifiable {
 }
 
 struct TaskRow: View {
+    /// Focus target for the inline edit panel — focus jumps to the title
+    /// the moment the panel appears (UX HIGH #87).
+    private enum Field: Hashable { case editTitle }
+
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var timerStore: FocusTimerStore
     @EnvironmentObject private var notifications: NotificationService
@@ -998,6 +1358,7 @@ struct TaskRow: View {
     @State private var isConfirmingDelete = false
     @State private var editTitle = ""
     @State private var editMinutes = 25
+    @FocusState private var initialFocus: Field?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1089,19 +1450,59 @@ struct TaskRow: View {
             }
             if isEditing {
                 editPanel
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
             if isConfirmingDelete {
                 deletePanel
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
             if let lastCompletionAction {
                 completionFeedback(wasCompleted: lastCompletionAction)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
         .cozyCard()
         .accessibilityIdentifier("task.row")
+        // UX HIGH #84 — right-click / secondary-click context menu on each
+        // task surfaces the same actions that already live behind icon
+        // buttons + the row's checkbox, plus a Duplicate shortcut. Keeps
+        // the row visually clean while making power-user moves one click.
+        .contextMenu {
+            Button {
+                startFocusForTask()
+            } label: {
+                Label("Focus this task", systemImage: "play.fill")
+            }
+            .disabled(task.isCompleted || !timerStore.canStartNewSession)
+
+            Button {
+                toggleCompletion()
+            } label: {
+                Label(task.isCompleted ? "Mark incomplete" : "Mark complete",
+                      systemImage: task.isCompleted ? "arrow.uturn.backward" : "checkmark.circle")
+            }
+
+            Button {
+                beginEditing()
+            } label: {
+                Label("Edit…", systemImage: "pencil")
+            }
+
+            Button {
+                duplicateTask()
+            } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                dataStore.deleteTask(id: task.id)
+                CozyFeedback.play(.delete)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private var editPanel: some View {
@@ -1113,15 +1514,19 @@ struct TaskRow: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.subCardRadius, style: .continuous)
                 .fill(CozyPalette.quietContainer(colorScheme))
         )
+        // UX HIGH #87 — focus jumps to the title field the moment the edit
+        // panel appears so the user can start typing immediately.
+        .onAppear { initialFocus = .editTitle }
     }
 
     private var editTitleField: some View {
         CozyLabeledControl(title: "Edit task", symbolName: "pencil", minWidth: 220) {
             VStack(alignment: .leading, spacing: 6) {
                 TextField("Task title", text: $editTitle)
+                    .focused($initialFocus, equals: .editTitle)
                     .cozyTextInput(minWidth: 220, alignment: .leading)
                 if cleanEditTitle.isEmpty {
                     CozyFieldHint(text: "Task title cannot be empty.", isError: true)
@@ -1226,6 +1631,39 @@ struct TaskRow: View {
         withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             isEditing = false
         }
+        CozyFeedback.play(.add)
+    }
+
+    // Shared by the contextMenu (UX-84) and the inline Focus button. Default
+    // FocusBoost is set up here so the new session inherits the same boost
+    // the user gets from the row-level Focus button.
+    private func startFocusForTask() {
+        guard timerStore.canStartNewSession else { return }
+        UserDefaults.standard.set(FocusBoost.default.id, forKey: "focus.activeBoostID")
+        timerStore.start(
+            taskTitle: task.title,
+            taskID: task.id,
+            duration: TimeInterval((task.estimatedMinutes > 0 ? task.estimatedMinutes : 25) * 60)
+        )
+        scheduleFocusCompletion()
+        NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.focus.rawValue)
+    }
+
+    // Duplicate the current task with a " copy" suffix. Preserves every
+    // user-facing field except `id`, `createdAt`, and `completedAt` (so the
+    // copy starts fresh as an active task).
+    private func duplicateTask() {
+        let copy = TaskItem(
+            title: task.title + " copy",
+            notes: task.notes,
+            dueDate: task.dueDate,
+            priority: task.priority,
+            listName: task.listName,
+            tagText: task.tagText,
+            estimatedMinutes: task.estimatedMinutes,
+            repeatRule: task.repeatRule
+        )
+        dataStore.addTask(copy)
         CozyFeedback.play(.add)
     }
 

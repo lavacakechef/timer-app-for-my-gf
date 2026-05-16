@@ -41,6 +41,12 @@ final class NotificationService: ObservableObject {
     @discardableResult
     func schedule(_ draft: NotificationDraft) async -> Bool {
         guard !ProcessInfo.processInfo.arguments.contains("-ui-testing") else { return false }
+        // TODO(UX-94): inject timerStore for smart silencing.
+        // When wired up, defer any non-focus-completion draft scheduled during
+        // an active focus session by early-returning here (or rescheduling to
+        // snapshot.endDate + 60s). Focus-completion drafts already use the
+        // "focus-complete-" identifier prefix, so they can be allow-listed
+        // without adding a `kind` field to `NotificationDraft`.
         await requestAuthorizationIfNeeded()
         guard authorizationStatus == .authorized || authorizationStatus == .provisional else {
             lastSchedulingError = "Notifications are off. The timer will still run, but macOS will not alert you."

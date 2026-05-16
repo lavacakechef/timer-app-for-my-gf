@@ -273,6 +273,15 @@ final class AppDataStore: ObservableObject {
     @Published private(set) var database = CozyDatabase()
     @Published private(set) var lastSaveError: String?
     @Published private(set) var containerFailureMessage: String?
+    /// Set to the paw count when a surprise drop fires on this open; nil otherwise.
+    /// `FirstSessionCard` observes this and clears it after showing the toast.
+    @Published var surpriseDropPaws: Int?
+
+    /// UX MED #98 — main-window UndoManager. Delete operations
+    /// (deleteTask / deleteHabit / deleteCountdown) register an undo group
+    /// that re-inserts the removed record so ⌘Z in the main window restores
+    /// it. Action name shows up in the Edit menu.
+    let undoManager = UndoManager()
 
     private let container: ModelContainer
     private let legacyJSONURL: URL
@@ -333,6 +342,73 @@ final class AppDataStore: ObservableObject {
     var rewards: [RewardItem] { database.rewards }
     var progression: ProgressionSummary { CozyProgression.summary(for: database) }
 
+    /// Returns the date of the previous app open, used to detect a long absence
+    /// (see `isMochiSleeping` in `FirstSessionCard`). Written by `recordAppOpen()`
+    /// before it updates to the current date, so the value here is always the
+    /// PREVIOUS open timestamp.
+    var lastOpenedDate: Date? {
+        UserDefaults.standard.object(forKey: "cozy.lastOpenedDate") as? Date
+    }
+
+    /// Call once per app-open (in `CozyMainWindowContent.onAppear`). Reads the
+    /// prior open date for sleep-detection BEFORE overwriting it with now.
+    func recordAppOpen() {
+        UserDefaults.standard.set(Date(), forKey: "cozy.lastOpenedDate")
+    }
+
+    // MARK: - Surprise drop on idle-return (#104)
+
+    private enum SurpriseDropKeys {
+        static let lastDropDate = "cozy.lastSurpriseDropDate"
+        static let absentGap: TimeInterval = 24 * 3600
+        static let windowGap: TimeInterval = 7 * 24 * 3600
+    }
+
+    /// Call BEFORE `recordAppOpen()`. Checks whether this open qualifies for a
+    /// surprise paw drop (absent-cluster rule + 7-day cap), fires it if so, and
+    /// publishes the result via `surpriseDropPaws` for `FirstSessionCard` to show.
+    /// Returns the paw count awarded, or nil when no drop fires.
+    ///
+    /// Logic:
+    ///  1. No prior open date → first launch, skip.
+    ///  2. Gap < 24 h → still within the same cluster, skip.
+    ///  3. Gap ≥ 24 h → new cluster. Proceed.
+    ///  4. 7-day rolling window cap → skip if a drop fired within the last 7 days.
+    ///  5. Drop fires: award 1–5 paws, record timestamps.
+    @discardableResult
+    func checkAndFireSurpriseDrop() -> Int? {
+        let now = Date()
+        let defaults = UserDefaults.standard
+
+        // Require a previous open timestamp.
+        guard let last = lastOpenedDate else { return nil }
+
+        let gap = now.timeIntervalSince(last)
+
+        // Not a new cluster: gap < 24 h — same cluster, no drop.
+        guard gap >= SurpriseDropKeys.absentGap else { return nil }
+
+        // New cluster detected (gap ≥ 24 h).
+        // 7-day rolling window cap: ≤ 1 drop per 7-day window.
+        if let lastDrop = defaults.object(forKey: SurpriseDropKeys.lastDropDate) as? Date,
+           now.timeIntervalSince(lastDrop) < SurpriseDropKeys.windowGap {
+            return nil
+        }
+
+        // Fire: 1–5 paws, random.
+        let paws = Int.random(in: 1...5)
+        // Persist bonusPaws to UserDefaults (SwiftData stores the scalar here
+        // to avoid a schema migration for a simple additive counter).
+        let current = defaults.integer(forKey: "cozy.bonusPaws")
+        defaults.set(current + paws, forKey: "cozy.bonusPaws")
+        database.bonusPaws += paws
+
+        defaults.set(now, forKey: SurpriseDropKeys.lastDropDate)
+
+        surpriseDropPaws = paws
+        return paws
+    }
+
     func addTask(_ task: TaskItem) {
         container.mainContext.insert(StoredTaskItem(from: task))
         saveAndReload()
@@ -354,8 +430,12 @@ final class AppDataStore: ObservableObject {
 
     func deleteTask(id: UUID) {
         guard let task = fetchTask(id: id) else { return }
+        let snapshot = task.value
         container.mainContext.delete(task)
         saveAndReload()
+        registerUndo(actionName: "Delete Task") { [weak self] in
+            self?.addTask(snapshot)
+        }
     }
 
     func toggleTaskCompletion(id: UUID, at date: Date = Date()) {
@@ -412,8 +492,12 @@ final class AppDataStore: ObservableObject {
     func deleteCountdown(id: UUID) {
         let descriptor = FetchDescriptor<StoredCountdownEvent>(predicate: #Predicate { $0.id == id })
         guard let event = try? container.mainContext.fetch(descriptor).first else { return }
+        let snapshot = event.value
         container.mainContext.delete(event)
         saveAndReload()
+        registerUndo(actionName: "Delete Countdown") { [weak self] in
+            self?.addCountdown(snapshot)
+        }
     }
 
     func rescheduleCountdown(id: UUID, to targetDate: Date) {
@@ -428,11 +512,27 @@ final class AppDataStore: ObservableObject {
         saveAndReload()
     }
 
+    func updateHabit(_ habit: Habit) {
+        let descriptor = FetchDescriptor<StoredHabit>(predicate: #Predicate { $0.id == habit.id })
+        guard let stored = try? container.mainContext.fetch(descriptor).first else { return }
+        stored.title = habit.title
+        stored.createdAt = habit.createdAt
+        stored.targetPerWeek = habit.targetPerWeek
+        stored.completionKeys = habit.completionKeys
+        stored.stickerName = habit.stickerName
+        stored.graceDays = habit.graceDays
+        saveAndReload()
+    }
+
     func deleteHabit(id: UUID) {
         let descriptor = FetchDescriptor<StoredHabit>(predicate: #Predicate { $0.id == id })
         guard let habit = try? container.mainContext.fetch(descriptor).first else { return }
+        let snapshot = habit.value
         container.mainContext.delete(habit)
         saveAndReload()
+        registerUndo(actionName: "Delete Habit") { [weak self] in
+            self?.addHabit(snapshot)
+        }
     }
 
     func toggleHabit(id: UUID, at date: Date = Date()) {
@@ -535,13 +635,27 @@ final class AppDataStore: ObservableObject {
             || category.localizedCaseInsensitiveContains("room decor")
     }
 
+    /// UX MED #98 — register a single-step undo. The closure runs on the
+    /// main actor (the store itself is @MainActor) and is responsible for
+    /// re-inserting the deleted record. Action name shows up in the Edit
+    /// menu (e.g. "Undo Delete Task").
+    private func registerUndo(actionName: String, _ undo: @escaping @MainActor () -> Void) {
+        undoManager.registerUndo(withTarget: self) { _ in
+            Task { @MainActor in undo() }
+        }
+        undoManager.setActionName(actionName)
+    }
+
     private func reload() throws {
         let tasks = try container.mainContext.fetch(FetchDescriptor<StoredTaskItem>(sortBy: [SortDescriptor(\.createdAt)])).map(\.value)
         let countdowns = try container.mainContext.fetch(FetchDescriptor<StoredCountdownEvent>(sortBy: [SortDescriptor(\.targetDate)])).map(\.value)
         let sessions = try container.mainContext.fetch(FetchDescriptor<StoredFocusSession>(sortBy: [SortDescriptor(\.startDate)])).map(\.value)
         let habits = try container.mainContext.fetch(FetchDescriptor<StoredHabit>(sortBy: [SortDescriptor(\.createdAt)])).map(\.value)
         let rewards = try container.mainContext.fetch(FetchDescriptor<StoredRewardItem>(sortBy: [SortDescriptor(\.unlockedAt)])).map(\.value)
-        database = CozyDatabase(tasks: tasks, countdowns: countdowns, focusSessions: sessions, habits: habits, rewards: rewards)
+        // bonusPaws is stored in UserDefaults (no SwiftData model needed — it's a
+        // simple scalar that doesn't require migration or schema versioning).
+        let bonusPaws = UserDefaults.standard.integer(forKey: "cozy.bonusPaws")
+        database = CozyDatabase(tasks: tasks, countdowns: countdowns, focusSessions: sessions, habits: habits, rewards: rewards, bonusPaws: bonusPaws)
     }
 
     private func seedIfNeeded() throws {
@@ -621,6 +735,14 @@ enum CozyJSONToSwiftDataMigrator {
         database.habits.forEach { context.insert(StoredHabit(from: $0)) }
         database.rewards.forEach { context.insert(StoredRewardItem(from: $0)) }
         try context.save()
+
+        // Migrate bonusPaws scalar from JSON into UserDefaults (only if not yet set).
+        if database.bonusPaws > 0 {
+            let existing = UserDefaults.standard.integer(forKey: "cozy.bonusPaws")
+            if existing == 0 {
+                UserDefaults.standard.set(database.bonusPaws, forKey: "cozy.bonusPaws")
+            }
+        }
 
         let migratedURL = legacyJSONURL.appendingPathExtension("migrated")
         try? FileManager.default.removeItem(at: migratedURL)

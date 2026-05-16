@@ -6,13 +6,18 @@
 - `xcodebuild -project CozyTime.xcodeproj -scheme CozyTime -destination 'platform=macOS' build` passes.
 - `xcodebuild -project CozyTime.xcodeproj -scheme CozyTime -destination 'platform=macOS,arch=arm64' -only-testing:CozyTimeTests test` passes the Xcode unit tests.
 - `scripts/run_xcode_release_gate.sh` passes the full Release test plan, including UI tests. Do not waive this for a public release.
-- `scripts/package_xcode_unsigned.sh` creates `.build/xcode/CozyTime.xcarchive` and `.build/xcode/CozyTime-unsigned-xcode.zip`.
+- `scripts/package_xcode_unsigned.sh` creates `.build/xcode/CozyTime.xcarchive`, `.build/xcode/CozyTime-unsigned-xcode.zip`, and `/Users/zinklee/Desktop/CozyTime-for-friend.zip`.
 - `codesign --verify --deep --strict --verbose=2 /Applications/CozyTime.app` passes after local install.
 - `spctl --assess --type execute` rejects the app as expected for the private ad-hoc/unsigned release path.
 - Optional visual smoke screenshot should confirm the archived app launches and renders the main window.
 
 ## Verified Manual Gates On This Machine
 
+- 2026-05-17 gated package run produced `/Users/zinklee/Desktop/CozyTime-for-friend.zip`.
+- Desktop ZIP SHA-256: `844c8236083800618ba1c74e400850ddbfad7342e1df1be28d66f1ff8fc96d95`.
+- Archived app passed `codesign --verify --deep --strict --verbose=2`.
+- `spctl --assess --type execute` rejected the archived app as expected for the private ad-hoc/unsigned release path.
+- Archived app launch-smoke test stayed running for 6 seconds and quit cleanly.
 - Launches from `/Applications/CozyTime.app`.
 - Today screen renders with the Mochi mascot, aligned cards, quick add, progress, countdown, and habit sections.
 - Today screen now includes the pet-first hero, daily cozy quests, visible paws/level state, and a desk-room preview.

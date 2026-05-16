@@ -97,8 +97,12 @@ struct CozyLottieMascot: View {
 
     var body: some View {
         let name = Self.animationName(character: characterID, state: state)
+        // Hero-sized mascots (≥120pt) loop continuously — they're the main
+        // interactive focus. Smaller instances play once on appear then stop
+        // so Today's 5+ concurrent Lottie loops don't stall the scroll thread.
+        let loopMode: LottieLoopMode = size >= 120 ? .loop : .playOnce
         LottieView(animation: .named(name, bundle: .main))
-            .playing(loopMode: .loop)
+            .playing(loopMode: loopMode)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }

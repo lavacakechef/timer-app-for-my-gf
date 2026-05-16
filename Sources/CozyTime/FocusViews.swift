@@ -64,7 +64,7 @@ struct FocusView: View {
                 )
                 if let completionSummary {
                     completionReview(for: completionSummary)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity)
                 }
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: CozyLayout.gridSpacing) {
@@ -91,79 +91,77 @@ struct FocusView: View {
     }
 
     private var timerPanel: some View {
-        TimelineView(.periodic(from: .now, by: timerStore.isActive ? 1 : 60)) { context in
-            let remaining = timerStore.remaining(at: context.date)
-            let progress = timerStore.progress(at: context.date)
-            let phase = timerStore.phase(at: context.date)
-            let accent = timerAccent(for: phase)
-            let shape = CozyTimerShape(rawValue: selectedTimerShape) ?? .ring
-            let elapsedMinute = Int(max(0, (timerStore.snapshot.duration - remaining) / 60))
+        let date = timerStore.currentDate
+        let remaining = timerStore.remaining(at: date)
+        let progress = timerStore.progress(at: date)
+        let phase = timerStore.phase(at: date)
+        let accent = timerAccent(for: phase)
+        let shape = CozyTimerShape(rawValue: selectedTimerShape) ?? .ring
+        let elapsedMinute = Int(max(0, (timerStore.snapshot.duration - remaining) / 60))
 
-            VStack(spacing: 20) {
-                FocusPhaseHeader(phase: phase, boost: activeBoostID.isEmpty ? nil : activeBoost)
-                MascotView(state: mascotState(for: phase), size: .hero)
-                // Checkpoints now lives in the VStack between mascot and ring,
-                // not as an overlay on the ring's top arc — eliminates the
-                // "dots overlapping the ring" problem the user kept flagging.
-                FocusMilestoneBeads(progress: progress, color: accent)
-                CozyTimerChrome(progress: progress, color: accent, skin: timerSkin, shape: shape)
-                    .frame(width: 206, height: 206)
-                    .overlay {
-                        VStack(spacing: 6) {
-                            Text(CozyFormatters.timerString(remaining))
-                                .font(CozyType.timer)
-                                .monospacedDigit()
-                            Text(timerStore.isActive || timerStore.needsCompletionReview ? "Focus" : "Ready")
-                                .font(CozyType.rowTitle)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(1)
-                        }
-                        .padding(16)
+        return VStack(spacing: 20) {
+            FocusPhaseHeader(phase: phase, boost: activeBoostID.isEmpty ? nil : activeBoost)
+            MascotView(state: mascotState(for: phase), size: .hero)
+            CozyTimerChrome(progress: progress, color: accent, skin: timerSkin, shape: shape)
+                .frame(width: 206, height: 206)
+                .overlay {
+                    VStack(spacing: 6) {
+                        Text(CozyFormatters.timerString(remaining))
+                            .font(CozyType.timer)
+                            .monospacedDigit()
+                        Text(timerStore.isActive || timerStore.needsCompletionReview ? "Focus" : "Ready")
+                            .font(CozyType.rowTitle)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
                     }
-                if timerStore.isActive || timerStore.needsCompletionReview {
-                    Text(timerStore.activeTaskTitle)
-                        .font(CozyType.rowTitle)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 260, minHeight: 40)
+                    .padding(16)
                 }
-                // Paw-boundary ticker — every 5 min of credited focus, placed
-                // in its own reserved row so it never floats across the timer
-                // chrome or checkpoint beads.
-                PawTickerOverlay(accent: accent)
-                    .frame(height: 32)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-
-                // Extra 6pt gap above the controls so the buttons aren't
-                // visually crowding the ring. Combined with the parent
-                // VStack's 14pt spacing this gives 20pt — on-grid, more
-                // breathable, doesn't widen the other rows.
-                ViewThatFits(in: .horizontal) {
-                    timerControls
-                        .padding(.top, 8)
-                    VStack(spacing: 8) {
-                        timerControls
-                    }
-                    .padding(.top, 8)
+                .overlay(alignment: .topTrailing) {
+                    PawCounterPill()
+                        .offset(x: 12, y: -8)
                 }
-
-                if showMotivationQuotes {
-                    MotivationQuotePill(
-                        quote: quotePreference.quote(for: phase, minute: elapsedMinute),
-                        color: accent
-                    )
-                }
+            // Phase dots below the ring — progress reads: ring fills → dots light up.
+            FocusMilestoneBeads(progress: progress, color: accent)
+            if timerStore.isActive || timerStore.needsCompletionReview {
+                Text(timerStore.activeTaskTitle)
+                    .font(CozyType.rowTitle)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 260, minHeight: 40)
             }
-            .frame(maxWidth: .infinity)
-            .cozyCard()
-            .onChange(of: Int(context.date.timeIntervalSince1970)) {
-                timerStore.refreshCompletion(at: context.date)
+            // Paw-boundary ticker — every 5 min of credited focus, placed
+            // in its own reserved row so it never floats across the timer
+            // chrome or checkpoint beads.
+            PawTickerOverlay(accent: accent)
+                .frame(height: 32)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            // Extra 6pt gap above the controls so the buttons aren't
+            // visually crowding the ring. Combined with the parent
+            // VStack's 14pt spacing this gives 20pt — on-grid, more
+            // breathable, doesn't widen the other rows.
+            ViewThatFits(in: .horizontal) {
+                timerControls
+                    .padding(.top, 8)
+                VStack(spacing: 8) {
+                    timerControls
+                }
+                .padding(.top, 8)
+            }
+
+            if showMotivationQuotes {
+                MotivationQuotePill(
+                    quote: quotePreference.quote(for: phase, minute: elapsedMinute),
+                    color: accent
+                )
             }
         }
+        .frame(maxWidth: .infinity)
+        .cozyCard()
     }
 
     private var focusSideColumn: some View {
@@ -283,6 +281,12 @@ struct FocusView: View {
             .accessibilityLabel("Discard session without saving")
             .accessibilityIdentifier("focus.stop")
         }
+        // SwiftUI-native haptic feedback (macOS 14+). Three triggers cover the
+        // three main state transitions: start/resume → .impact; pause → .stop;
+        // completion review saved → .success.
+        .sensoryFeedback(.impact(weight: .medium), trigger: timerStore.isRunning)
+        .sensoryFeedback(.stop, trigger: timerStore.isPaused)
+        .sensoryFeedback(.success, trigger: timerStore.needsCompletionReview)
     }
 
     private var wrapButtonTitle: String {
@@ -449,7 +453,7 @@ struct MotivationQuotePill: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                     .fill(color.opacity(0.11))
             )
             .foregroundStyle(color)
@@ -549,11 +553,16 @@ struct FocusSetupCard: View {
 
             Divider()
 
-            HStack(spacing: 12) {
+            // Visual audit IMPORTANT #4: when the caption wraps to 2 lines
+            // the 48pt icon dropped below the title baseline at default
+            // .center. .top with a 2pt nudge on the icon aligns it with the
+            // rarity label's cap-height.
+            HStack(alignment: .top, spacing: 12) {
                 RarityIcon(symbol: pendingBoost.symbol, rarity: pendingBoost.rarity, size: 48)
                     .id(pendingBoost.id)
                     .transition(.opacity)
-                VStack(alignment: .leading, spacing: 3) {
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 4) {
                     Text("\(pendingBoost.rarity.rawValue) boost")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(CozyPalette.catalogColor(pendingBoost.rarity.colorHex))
@@ -640,7 +649,7 @@ struct FocusTaskPicker: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
             }
-            .frame(minWidth: 260, minHeight: CozyLayout.controlHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: CozyLayout.controlHeight, alignment: .leading)
         }
         .menuStyle(.borderlessButton)
         .cozyControlShell(minWidth: 260, alignment: .leading)
@@ -681,13 +690,11 @@ struct FocusRunningCompanionCard: View {
             // Hybrid: ring is the progress signal, number is a ghost preview
             // ("+N on save"). Adventure-roll bonus is intentionally excluded —
             // it's resolved at save, and the preview must never over-promise.
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                FocusRunningRewardForecast(
-                    creditedDuration: TimerEngine.creditedDuration(for: timerStore.snapshot, at: context.date),
-                    duration: timerStore.snapshot.duration,
-                    boost: boost
-                )
-            }
+            FocusRunningRewardForecast(
+                creditedDuration: TimerEngine.creditedDuration(for: timerStore.snapshot, at: timerStore.currentDate),
+                duration: timerStore.snapshot.duration,
+                boost: boost
+            )
 
             Label("\(boost.title): +\(boost.bonusPaws) paws when saved", systemImage: boost.symbol)
                 .font(CozyType.body.weight(.semibold))
@@ -889,30 +896,57 @@ struct FocusMilestoneBeads: View {
     }
 
     var body: some View {
-        // Eyebrow + dots — labeling each chip individually made the pills
-        // wrap mid-word inside the narrow timer card ("Set-tled / Half-way").
-        // A single "Checkpoints" eyebrow gives the row meaning without
-        // letting the chip widths blow up.
-        HStack(spacing: 8) {
-            Text("Checkpoints")
-                .font(CozyType.footnote)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                ForEach(milestones, id: \.0) { milestone in
-                    let reached = progress >= milestone.0
-                    Circle()
-                        .fill(reached ? color : Color.secondary.opacity(0.35))
-                        .frame(width: reached ? 12 : 8, height: reached ? 12 : 8)
-                        .animation(CozyMotion.snappy(reduceMotion, duration: 0.18), value: reached)
-                        .accessibilityLabel(reached ? "\(milestone.1) checkpoint reached" : "\(milestone.1) checkpoint")
-                }
+        HStack(spacing: 6) {
+            ForEach(milestones, id: \.0) { milestone in
+                let reached = progress >= milestone.0
+                Circle()
+                    .fill(reached ? color : Color.secondary.opacity(0.28))
+                    // SP-001: stay on the allowed grid (8/12) instead of
+                    // 7/10. Visually identical to within a pixel and keeps
+                    // the design lint clean.
+                    .frame(width: reached ? 12 : 8, height: reached ? 12 : 8)
+                    .animation(CozyMotion.snappy(reduceMotion, duration: 0.18), value: reached)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(CozyPalette.quietContainer(colorScheme).opacity(0.72)))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(completedCount) of \(milestones.count) focus checkpoints reached")
+        .accessibilityLabel("\(completedCount) of \(milestones.count) focus phases reached")
+    }
+}
+
+// PawCounterPill — persistent paw-total badge overlaid on the timer ring
+// (top-trailing corner). Pulses its border when the paw count increments,
+// gated by Reduce Motion (AM-001). Shows live coinsAvailable which is the
+// canonical displayed paw total throughout the app.
+private struct PawCounterPill: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var dataStore: AppDataStore
+    @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
+    @State private var pulse = false
+
+    private var theme: CozyTheme { CozyTheme.named(selectedTheme) }
+
+    var body: some View {
+        Label("\(dataStore.progression.coinsAvailable)", systemImage: "pawprint.fill")
+            .font(CozyType.captionStrong)
+            .foregroundStyle(theme.reward)
+            .padding(.horizontal, CozyLayout.badgePaddingSmallH)
+            .padding(.vertical, CozyLayout.badgePaddingSmallV)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(theme.reward.opacity(0.12))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(
+                                pulse && !reduceMotion ? CozyPalette.wasabi.opacity(0.72) : theme.reward.opacity(0.22),
+                                lineWidth: 1.5
+                            )
+                    )
+            )
+            .onChange(of: dataStore.progression.coinsAvailable) { _, _ in
+                guard !reduceMotion else { return }
+                pulse = true
+                withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.9)) { pulse = false }
+            }
     }
 }
 
@@ -967,12 +1001,12 @@ private struct PawTickerOverlay: View {
                 advanceFloater(id: floater.id, to: 1.0)
             }
         } else {
-            withAnimation(CozyMotion.gentle(reduceMotion, duration: 1.2)) {
+            withAnimation(CozyMotion.gentle(reduceMotion, duration: 0.9)) {
                 advanceFloater(id: floater.id, to: 1.0)
             }
         }
         // Cleanup after the animation completes so the array doesn't grow.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
             floaters.removeAll { $0.id == floater.id }
         }
     }
@@ -1147,6 +1181,9 @@ struct FocusCompletionReview: View {
     let openRewards: () -> Void
     @State private var revealStep = 0
     @State private var presentingUnlockSheet = false
+    @State private var showStamp = false
+    @State private var rewardPulse = false
+    @FocusState private var reflectionFocused: Bool
 
     private var theme: CozyTheme {
         CozyTheme.named(selectedTheme)
@@ -1167,6 +1204,15 @@ struct FocusCompletionReview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if showStamp && !reduceMotion {
+                Text("✓")
+                    .font(CozyType.timer)
+                    .foregroundStyle(theme.reward.opacity(0.85))
+                    .scaleEffect(showStamp ? 1.0 : 0.4)
+                    .opacity(showStamp ? 1.0 : 0)
+                    .transition(.opacity.combined(with: .scale(scale: 0.4)))
+                    .allowsHitTesting(false)
+            }
             HStack(spacing: 12) {
                 MascotView(state: .complete, size: .avatar)
                 VStack(alignment: .leading, spacing: 4) {
@@ -1193,7 +1239,7 @@ struct FocusCompletionReview: View {
                 Label("\(boost.title): +\(boost.bonusPaws) paws", systemImage: boost.symbol)
                     .font(CozyType.body.weight(.semibold))
                     .foregroundStyle(theme.reward)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             } else if !summary.isRewardEligible {
                 CozyFieldHint(text: "Saved. Even tiny sips count — paws unlock from 5 minutes and up.")
             }
@@ -1207,7 +1253,13 @@ struct FocusCompletionReview: View {
                 .accessibilityIdentifier("focus.reflection")
                 .lineLimit(2, reservesSpace: true)
                 .cozyTextInput(minHeight: 62, alignment: .topLeading)
+                .focused($reflectionFocused)
                 .accessibilityLabel("Focus reflection")
+                // macOS 15 #110 — opt the reflection field into the full
+                // Writing Tools menu (proofread, rewrite, summarize). The
+                // note is short-form prose, so the system's writing helpers
+                // are exactly the kind of friction-removal we want here.
+                .writingToolsBehavior(.complete)
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
@@ -1230,9 +1282,19 @@ struct FocusCompletionReview: View {
                 )
             }
         }
+        .onChange(of: presentingUnlockSheet) { _, isPresented in
+            guard !isPresented else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(120))
+                reflectionFocused = true
+            }
+        }
         .task(id: summary.sessionID) {
             revealStep = 0
             presentingUnlockSheet = false
+            showStamp = false
+            rewardPulse = false
+            reflectionFocused = true
             if reduceMotion {
                 revealStep = 2
             } else {
@@ -1240,9 +1302,19 @@ struct FocusCompletionReview: View {
                 // prior nanoseconds form but readable at a glance and the API
                 // Apple now recommends for new code.
                 try? await Task.sleep(for: .milliseconds(180))
+                withAnimation(CozyMotion.spring(reduceMotion, response: 0.25, damping: 0.6)) { showStamp = true }
+                CozyFeedback.play(.reward)
+                try? await Task.sleep(for: .milliseconds(600))
+                withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.3)) { showStamp = false }
                 withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.20)) { revealStep = 1 }
                 try? await Task.sleep(for: .milliseconds(220))
                 withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.22)) { revealStep = 2 }
+            }
+            // Trigger persimmon pulse on the Rewards Room button if eligible.
+            if revealStep >= 1 && summary.isRewardEligible {
+                rewardPulse = true
+                try? await Task.sleep(for: .milliseconds(3000))
+                rewardPulse = false
             }
             // After the reveal lands, decide whether this unlock deserves a moment.
             // Reduce Motion: skip the small extra delay; present immediately.
@@ -1250,6 +1322,7 @@ struct FocusCompletionReview: View {
                 if !reduceMotion {
                     try? await Task.sleep(for: .milliseconds(240))
                 }
+                reflectionFocused = false
                 presentingUnlockSheet = true
             }
         }
@@ -1260,9 +1333,9 @@ struct FocusCompletionReview: View {
         SoftMetricBadge(title: "focus", value: "\(summary.minutes)m", symbol: "timer", color: CozyPalette.focusJade)
         if revealStep >= 1, summary.isRewardEligible {
             SoftMetricBadge(title: "XP", value: "+\(summary.xp)", symbol: "sparkles", color: CozyPalette.habitLavender)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
             SoftMetricBadge(title: "paws", value: "+\(summary.paws)", symbol: "pawprint.fill", color: theme.reward)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
         }
     }
 
@@ -1283,6 +1356,11 @@ struct FocusCompletionReview: View {
             Button("Rewards Room", action: openRewards)
                 .cozyPrimaryButton(minWidth: 132)
                 .accessibilityIdentifier("focus.rewardsRoom")
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(CozyPalette.persimmon.opacity(rewardPulse ? 0.6 : 0), lineWidth: 2)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.9).repeatCount(3, autoreverses: true), value: rewardPulse)
+                )
         }
     }
 }
@@ -1412,7 +1490,7 @@ struct CozyUnlockSheet: View {
             .accessibilityIdentifier("focus.unlockSheet.dismiss")
         }
         .padding(28)
-        .frame(width: 360)
+        .frame(idealWidth: 360, maxWidth: 480)
         .background(
             // Card-style sheet on cardFill (was theme.canvas — same color as
             // host sheet on macOS). cardFill + rarity border + soft shadow
@@ -1487,7 +1565,7 @@ struct AdventureRevealView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                 .fill(CozyPalette.catalogColor(result.rarity.colorHex).opacity(0.12))
         )
         .accessibilityIdentifier("focus.adventureReveal")
@@ -1634,7 +1712,7 @@ struct MenuBarPanelView: View {
                 timerHero
                 if let lastMenuBarSaveMessage {
                     menuBarSaveSummary(message: lastMenuBarSaveMessage)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity)
                 }
                 todayProgressCard
                 focusDiaryCard
@@ -1643,68 +1721,143 @@ struct MenuBarPanelView: View {
             }
             .padding(16)
         }
-        .frame(width: 360)
+        .frame(minWidth: 340, idealWidth: 360, maxWidth: 480, maxHeight: 640)
         .tint(theme.accent)
     }
 
     private var timerHero: some View {
-        TimelineView(.periodic(from: .now, by: timerStore.isActive ? 1 : 60)) { context in
-            let phase = timerStore.phase(at: context.date)
-            let accent = CozyFocusColor.color(for: phase)
-            let hasTimer = timerStore.isActive || timerStore.needsCompletionReview
+        let date = timerStore.currentDate
+        let phase = timerStore.phase(at: date)
+        let accent = CozyFocusColor.color(for: phase)
+        let hasTimer = timerStore.isActive || timerStore.needsCompletionReview
 
-            MenuBarSurface {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 12) {
-                        MascotView(state: menuBarMascotState, size: .avatar)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(menuBarHeadline)
-                                .font(CozyType.cardTitle)
-                                .lineLimit(1)
-                            Text(menuBarSubtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        Spacer(minLength: 8)
-                        MenuBarPhasePill(title: menuBarModeLabel(at: context.date), color: accent)
-                    }
+        return MenuBarSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                menuBarHeroHeader(date: date, accent: accent)
 
-                    Text(menuBarTimerText(at: context.date))
+                HStack(alignment: .center, spacing: CozyLayout.formRowSpacing) {
+                    MascotView(state: .idle, size: .inline)
+                        .accessibilityHidden(true)
+                    Text(menuBarTimerText(at: date))
                         .font(CozyType.metric)
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.76)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .foregroundStyle(accent)
                         .accessibilityIdentifier("menubar.timer")
+                }
 
-                    if hasTimer {
-                        VStack(alignment: .leading, spacing: 5) {
-                            CozyLinearProgressBar(value: timerStore.progress(at: context.date), color: accent)
-                            HStack {
-                                Text(phase.microcopy)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text("\(Int(timerStore.progress(at: context.date) * 100))%")
-                                    .monospacedDigit()
-                            }
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                // UX LOW #107: paw count + weekly minutes line beneath
+                // the timer state. Tap → reward haptic so the user
+                // always has a tiny tactile cue when peeking at the
+                // popover (mirrors the "tap a reward" pattern in the
+                // Rewards Room).
+                menuBarPawsLine
+
+                if hasTimer {
+                    VStack(alignment: .leading, spacing: 5) {
+                        CozyLinearProgressBar(value: timerStore.progress(at: date), color: accent)
+                        HStack {
+                            Text(phase.microcopy)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("\(Int(timerStore.progress(at: date) * 100))%")
+                                .monospacedDigit()
                         }
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     }
+                }
 
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 8) {
-                            menuBarPrimaryButton
-                            menuBarSecondaryButton
-                        }
-                        VStack(spacing: 8) {
-                            menuBarPrimaryButton
-                            menuBarSecondaryButton
-                        }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        menuBarPrimaryButton
+                        menuBarSecondaryButton
+                    }
+                    VStack(spacing: 8) {
+                        menuBarPrimaryButton
+                        menuBarSecondaryButton
                     }
                 }
             }
         }
+    }
+
+    private func menuBarHeroHeader(date: Date, accent: Color) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                menuBarHeroIdentity
+                Spacer(minLength: 8)
+                MenuBarPhasePill(title: menuBarModeLabel(at: date), color: accent)
+                    .fixedSize()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                menuBarHeroIdentity
+                MenuBarPhasePill(title: menuBarModeLabel(at: date), color: accent)
+                    .fixedSize()
+            }
+        }
+    }
+
+    private var menuBarHeroIdentity: some View {
+        HStack(alignment: .top, spacing: 12) {
+            MascotView(state: menuBarMascotState, size: .avatar)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(menuBarHeadline)
+                    .font(CozyType.cardTitle)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(menuBarSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+            .layoutPriority(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// UX LOW #107 — small paws + weekly-minutes line under the menu-bar
+    /// timer. Tappable for a reward haptic; the count itself is read-only
+    /// (the Rewards Room is the actual spend surface, accessible via the
+    /// bottomActions "Open App" button).
+    private var menuBarPawsLine: some View {
+        let coins = dataStore.progression.coinsAvailable
+        let minutes = weeklyFocusMinutes
+        return Button {
+            CozyHaptics.perform(.reward)
+        } label: {
+            Label("\(coins) paws · \(minutes)m this week", systemImage: "pawprint.fill")
+                .font(CozyType.captionStrong)
+                .foregroundStyle(theme.reward)
+                .padding(.horizontal, CozyLayout.badgePaddingMediumH)
+                .padding(.vertical, CozyLayout.badgePaddingSmallV)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(theme.reward.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(coins) paws available. \(minutes) focus minutes this week.")
+        .accessibilityIdentifier("menubar.pawsLine")
+    }
+
+    /// Sum of completed minutes across the trailing 7 days (matches the
+    /// Stats / WeeklyDigest window). Reused by `menuBarPawsLine` so the
+    /// popover and the Stats card never disagree.
+    private var weeklyFocusMinutes: Int {
+        let calendar = Calendar.autoupdatingCurrent
+        let today = calendar.startOfDay(for: Date())
+        guard let start = calendar.date(byAdding: .day, value: -6, to: today) else { return 0 }
+        return dataStore.focusSessions
+            .filter { session in
+                let day = calendar.startOfDay(for: session.reportingDate)
+                return day >= start && day <= today
+            }
+            .reduce(0) { $0 + $1.completedMinutes }
     }
 
     private var todayProgressCard: some View {

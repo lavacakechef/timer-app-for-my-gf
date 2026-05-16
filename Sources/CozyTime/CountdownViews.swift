@@ -1,3 +1,4 @@
+import AppKit
 import CozyCore
 import SwiftUI
 
@@ -32,6 +33,10 @@ struct CountdownsView: View {
                     )
                         .frame(minHeight: 280)
                 } else {
+                    // TODO(UX-86): drag-to-reorder needs a `List` container and a
+                    // `CountdownEvent.sortIndex` persisted field before `.onMove`
+                    // can replace the current targetDate sort. Keeping LazyVStack
+                    // until both pieces exist.
                     LazyVStack(spacing: CozyLayout.gridSpacing) {
                         ForEach(dataStore.countdowns.sorted { $0.targetDate < $1.targetDate }) { event in
                             CountdownCard(event: event)
@@ -46,21 +51,28 @@ struct CountdownsView: View {
 
     private var countdownComposer: some View {
         VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-            CozyResponsiveFormRow {
-                titleField
-            } trailing: {
+            titleField
+
+            LazyVGrid(columns: countdownComposerColumns, alignment: .leading, spacing: CozyLayout.formRowSpacing) {
                 datePicker
                 reminderToggle
                 addButton
-            } auxiliary: {
-                dateQuickChoicesRow
             }
+
+            dateQuickChoicesRow
+
             if let lastAddedCountdown {
                 countdownAddFeedback(event: lastAddedCountdown)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
         .cozyCard()
+    }
+
+    private var countdownComposerColumns: [GridItem] {
+        [
+            GridItem(.adaptive(minimum: 220), spacing: CozyLayout.formRowSpacing, alignment: .top)
+        ]
     }
 
     private var titleField: some View {
@@ -79,10 +91,11 @@ struct CountdownsView: View {
     }
 
     private var datePicker: some View {
-        CozyLabeledControl(title: "Date", symbolName: "calendar") {
+        CozyLabeledControl(title: "Date", symbolName: "calendar", minWidth: 220) {
             CozyDateInput(date: $targetDate, label: "Countdown date", includeInlineQuickChoices: false)
                 .accessibilityIdentifier("countdown.date")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Quick-pick chips ("Tomorrow / 7 days / 30 days") rendered as a full-width
@@ -95,7 +108,7 @@ struct CountdownsView: View {
     }
 
     private var addButton: some View {
-        CozyLabeledControl(title: "Action", symbolName: "plus.circle", minWidth: 132) {
+        CozyLabeledControl(title: "Action", symbolName: "plus.circle", minWidth: 220) {
             Button {
                 addCountdown()
             } label: {
@@ -107,18 +120,19 @@ struct CountdownsView: View {
             .accessibilityHint(addButtonHelp)
             .accessibilityIdentifier("countdown.add")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var reminderToggle: some View {
-        CozyLabeledControl(title: "Alerts", symbolName: "bell.badge", minWidth: 190) {
+        CozyLabeledControl(title: "Alerts", symbolName: "bell.badge", minWidth: 220) {
             CozyToggleRow(
-                title: "Countdown reminders",
-                symbolName: "bell.badge",
-                subtitle: "7d, 1d, day-of",
+                title: "Reminders",
+                subtitle: "7d, 1d, today",
                 isOn: $remindersEnabled
             )
             .accessibilityIdentifier("countdown.reminders")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func addCountdown() {
@@ -133,8 +147,13 @@ struct CountdownsView: View {
         lastAddedCountdownScheduledAlerts = remindersEnabled ? -1 : 0
         if remindersEnabled {
             Task {
+                guard await MainActor.run(body: { dataStore.countdowns.contains { $0.id == event.id } }) else { return }
                 let scheduledCount = await notifications.scheduleCountdownMilestones(for: event)
                 await MainActor.run {
+                    guard dataStore.countdowns.contains(where: { $0.id == event.id }) else {
+                        Task { await notifications.cancelCountdownNotifications(for: event.id) }
+                        return
+                    }
                     if scheduledCount == 0 {
                         dataStore.updateCountdown(withID: event.id, remindersEnabled: false)
                     }
@@ -241,7 +260,11 @@ struct CountdownCard: View {
     var body: some View {
         let phase = event.phase()
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
+            // Visual audit CRITICAL #4: row mixed a 56pt sticker, ~28pt phase
+            // badge, ~32pt reminder pill, and 44pt buttons. Default .center
+            // alignment drifted chip mid-heights relative to the buttons.
+            // Explicit .center + tight spacing aligns to a shared band.
+            HStack(alignment: .center, spacing: 10) {
                 CountdownStickerFrame(event: event, phase: phase)
                 Spacer()
                 CountdownPhaseBadge(phase: phase, color: daysColor)
@@ -277,11 +300,11 @@ struct CountdownCard: View {
             }
             if isConfirmingDelete {
                 deleteConfirmation
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
             if isEditing {
                 editPanel
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             } else if savedEditFeedback {
                 Label(savedEditText, systemImage: savedEditAlertCount == 0 ? "bell.slash.fill" : "checkmark.circle.fill")
                     .font(CozyType.captionStrong)
@@ -324,6 +347,35 @@ struct CountdownCard: View {
             }
         }
         .cozyCard()
+        .contextMenu {
+            Button {
+                withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
+                    syncDraft()
+                    isEditing = true
+                    savedEditFeedback = false
+                    isConfirmingDelete = false
+                }
+            } label: {
+                Label("Edit…", systemImage: "pencil")
+            }
+            Button {
+                // Best-effort jump to the system Calendar app. The "ical://"
+                // scheme is the documented macOS handler URL; if a future
+                // Calendar app version drops support we silently no-op.
+                if let url = URL(string: "ical://") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("Open in Calendar app", systemImage: "calendar")
+            }
+            Divider()
+            Button(role: .destructive) {
+                deleteCountdown()
+                CozyFeedback.play(.delete)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
         .onAppear(perform: syncDraft)
         .onChange(of: event) {
             if !isEditing {
@@ -368,7 +420,7 @@ struct CountdownCard: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                 .fill(CozyPalette.overdue.opacity(0.08))
         )
         .accessibilityIdentifier("countdown.delete.prompt")
@@ -443,7 +495,7 @@ struct CountdownCard: View {
     }
 
     private var editDateField: some View {
-        CozyLabeledControl(title: "Date", symbolName: "calendar") {
+        CozyLabeledControl(title: "Date", symbolName: "calendar", minWidth: 220) {
             CozyDateInput(date: $draftDate, label: "Countdown date", includeInlineQuickChoices: false)
                 .accessibilityIdentifier("countdown.edit.date")
         }
@@ -455,11 +507,10 @@ struct CountdownCard: View {
     }
 
     private var editReminderToggle: some View {
-        CozyLabeledControl(title: "Alerts", symbolName: "bell.badge", minWidth: 190) {
+        CozyLabeledControl(title: "Alerts", symbolName: "bell.badge", minWidth: 220) {
             CozyToggleRow(
-                title: "Countdown reminders",
-                symbolName: "bell.badge",
-                subtitle: "7d, 1d, day-of",
+                title: "Reminders",
+                subtitle: "7d, 1d, today",
                 isOn: $draftRemindersEnabled
             )
             .accessibilityIdentifier("countdown.edit.reminders")
@@ -598,7 +649,7 @@ struct CountdownRecoveryActions: View {
                 }
                 .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .fill(CozyPalette.overdue.opacity(0.08))
                 )
                 .transition(.opacity)
@@ -925,7 +976,7 @@ struct CountdownPrepPrompt: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
     }
@@ -1043,8 +1094,19 @@ struct CalendarPlannerView: View {
         .sheet(isPresented: $presentingCountdownComposer) {
             CountdownsView()
                 .environmentObject(dataStore)
-                .frame(minWidth: 640, idealWidth: 720, minHeight: 540, idealHeight: 640)
+                .frame(
+                    minWidth: CozyLayout.sheetIdealWidthLarge,
+                    idealWidth: CozyLayout.sheetIdealWidthLarge,
+                    minHeight: CozyLayout.sheetIdealHeightMedium,
+                    idealHeight: CozyLayout.sheetIdealHeightLarge
+                )
                 .modifier(CozySheetDismissAffordance { presentingCountdownComposer = false })
+        }
+        // UX HIGH #85 — ⌘N (when Calendar selected) opens the countdown
+        // composer sheet. Countdowns now live inside Calendar, so the
+        // keystroke maps to the section's primary creation affordance.
+        .onReceive(NotificationCenter.default.publisher(for: .cozyNewCountdown)) { _ in
+            presentingCountdownComposer = true
         }
         .accessibilityIdentifier("screen.calendar")
     }
@@ -1273,7 +1335,12 @@ struct CalendarDayCard: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(minHeight: 162, alignment: .topLeading)
+        // Visual audit IMPORTANT #3 (LA-003): cell-to-cell heights in the
+        // 7-column LazyVGrid drifted because tall days (focus + task +
+        // countdown + +N more) push beyond minHeight while empty days stop
+        // at the floor. .frame(maxHeight: .infinity, alignment: .topLeading)
+        // ensures every cell in a row resolves to the tallest sibling.
+        .frame(minHeight: 162, maxHeight: .infinity, alignment: .topLeading)
         .cozyCard()
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -1412,7 +1479,7 @@ private struct CalendarDetailRow: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                 .fill(color.opacity(0.08))
         )
     }

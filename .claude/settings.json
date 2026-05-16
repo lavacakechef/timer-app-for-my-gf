@@ -10,6 +10,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd $CLAUDE_PROJECT_DIR && swift build 2>&1 | grep -E 'error:|Build complete|warning:.*error' | tail -20"
+          }
+        ]
+      }
     ]
   }
 }
