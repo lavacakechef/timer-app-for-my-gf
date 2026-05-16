@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class AppDataStore: ObservableObject {
     @Published private(set) var database: CozyDatabase
+    @Published private(set) var lastSaveError: String?
+    @Published private(set) var containerFailureMessage: String?
 
     private let fileURL: URL
 
@@ -167,8 +169,14 @@ final class AppDataStore: ObservableObject {
         do {
             let data = try JSONEncoder.cozy.encode(database)
             try data.write(to: fileURL, options: [.atomic])
+            if lastSaveError != nil {
+                lastSaveError = nil
+            }
         } catch {
-            // Keep UI non-blocking for private v1; release builds should surface this.
+            // API parity with the SwiftData backend: surface the save failure to a banner
+            // (RootView observes `dataStore.lastSaveError`) rather than swallowing silently.
+            // Both backends must expose the same observable behavior per CLAUDE.md.
+            lastSaveError = "CozyTime couldn't save just now. Your last edit may not have persisted."
         }
     }
 

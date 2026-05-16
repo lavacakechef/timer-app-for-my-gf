@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CozyTime is a private macOS SwiftUI app (one trusted user, unsigned distribution). It combines focus timer, tasks, countdowns, habits, and a mascot/reward progression system. Deployment target is macOS 14, Swift 6.
+CozyTime is a private macOS SwiftUI app (one trusted user, ad-hoc-signed distribution). It combines focus timer, tasks, countdowns, habits, and a mascot/reward progression system. **Deployment target is macOS 15.0, Swift 6.** The single deploy machine is an M2 MacBook Air on macOS 15.1 Sequoia, so the codebase is free to adopt macOS 15-only SwiftUI / SwiftData / UserNotifications APIs.
 
 ## Two Build Paths (important)
 
@@ -35,7 +35,7 @@ xcodebuild -project CozyTime.xcodeproj -scheme CozyTime \
 # Full release test plan (unit + UI tests) — the formal release gate
 scripts/run_xcode_release_gate.sh
 
-# Archive and produce the unsigned private ZIP at .build/xcode/CozyTime-unsigned-xcode.zip
+# Archive and produce the private ad-hoc-signed ZIP at .build/xcode/CozyTime-unsigned-xcode.zip
 # (runs the release gate first unless COZYTIME_SKIP_RELEASE_GATE=1)
 scripts/package_xcode_unsigned.sh
 
@@ -71,7 +71,7 @@ Test layout mirrors the split:
 
 ## Bundle / paths
 
-- Bundle ID: `dev.local.cozytime`
-- App data (sandboxed Xcode build): `~/Library/Containers/dev.local.cozytime/Data/Library/Application Support/CozyTime/`
-- App data (SwiftPM dev build): `~/Library/Application Support/CozyTime/CozyTimeData.json`
-- App Support folder name is also `CozyTime` (used by both stores).
+- Bundle ID: `dev.local.cozytime`.
+- **App is not sandboxed.** `Packaging/CozyTime.entitlements` is intentionally empty (`<dict/>`) — no `app-sandbox` key — and `codesign -d --entitlements -` on the built app returns no entitlements. Both the Xcode/SwiftData build and the SwiftPM/JSON dev build read and write under `~/Library/Application Support/CozyTime/`.
+- Legacy JSON migration source (read once on first launch of the SwiftData build, then ignored): `~/Library/Application Support/CozyTime/CozyTimeData.json`. This is also the file the SwiftPM dev build writes, so switching between dev and Xcode builds is seamless on first run.
+- A `~/Library/Containers/dev.local.cozytime/` directory may exist on this machine as leftover prototype data from an earlier sandboxed build. The current target does not read or write it; treat it as cruft you can delete during cleanup (see `docs/INSTALL.md`).

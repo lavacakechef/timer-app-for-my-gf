@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 
 final class CozyTimeUITests: XCTestCase {
@@ -11,17 +12,16 @@ final class CozyTimeUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 8))
 
-        let quickAdd = app.textFields["quickAdd.title"]
         let taskTitle = "UI test tiny task"
-        XCTAssertTrue(quickAdd.waitForExistence(timeout: 5))
-        quickAdd.click()
-        quickAdd.typeText(taskTitle)
-        app.buttons["quickAdd.add"].click()
-        XCTAssertTrue(waitForTextField(quickAdd, toClear: taskTitle), "Quick add did not clear after adding the task.")
+        let firstSessionTitle = app.textFields["firstSession.title"]
+        XCTAssertTrue(firstSessionTitle.waitForExistence(timeout: 5))
+        clickElement(firstSessionTitle)
+        firstSessionTitle.typeKey("a", modifierFlags: [.command])
+        firstSessionTitle.typeText(taskTitle)
+        XCTAssertTrue(app.buttons["firstSession.start"].waitForExistence(timeout: 5))
+        app.buttons["firstSession.start"].click()
 
-        let focusSidebarItem = app.descendants(matching: .any)["sidebar.focus"].firstMatch
-        XCTAssertTrue(focusSidebarItem.waitForExistence(timeout: 5))
-        focusSidebarItem.click()
+        openSection("focus", in: app)
 
         let startButton = app.buttons["focus.start"]
         let pauseButton = app.buttons["focus.pause"]
@@ -49,10 +49,22 @@ final class CozyTimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["focus.claimReward"].waitForExistence(timeout: 5))
         app.buttons["focus.claimReward"].click()
 
+        // Special/dream adventure rolls now present a CozyUnlockSheet modal,
+        // which is a two-stage reveal: tap the wrap first, then the dismiss
+        // ("Add to room") button becomes enabled. Tap both if the sheet appears.
+        let unlockWrap = app.descendants(matching: .any)["focus.unlockSheet.wrap"].firstMatch
+        if unlockWrap.waitForExistence(timeout: 1.5) {
+            unlockWrap.click()
+            let unlockDismiss = app.descendants(matching: .any)["focus.unlockSheet.dismiss"].firstMatch
+            if unlockDismiss.waitForExistence(timeout: 2) {
+                unlockDismiss.click()
+            }
+        }
+
         let reflectionNote = "Proof saved"
         let reflectionField = app.descendants(matching: .any)["focus.reflection"].firstMatch
         XCTAssertTrue(reflectionField.waitForExistence(timeout: 5))
-        reflectionField.click()
+        clickElement(reflectionField)
         reflectionField.typeText(reflectionNote)
         XCTAssertTrue(app.buttons["focus.rewardsRoom"].waitForExistence(timeout: 5))
         app.buttons["focus.rewardsRoom"].click()
@@ -84,20 +96,29 @@ final class CozyTimeUITests: XCTestCase {
         let app = launchApp()
         let suffix = UUID().uuidString.prefix(6)
 
-        openSection("countdowns", in: app)
+        // Countdowns now live inside Calendar (sidebar consolidation).
+        // The "+ New countdown" button on Calendar opens the composer sheet.
+        openSection("calendar", in: app)
+        let newCountdown = app.buttons["calendar.newCountdown"]
+        XCTAssertTrue(newCountdown.waitForExistence(timeout: 5))
+        newCountdown.click()
         let countdownTitle = "UI countdown \(suffix)"
         let countdownField = app.textFields["countdown.title"]
         XCTAssertTrue(countdownField.waitForExistence(timeout: 5))
-        countdownField.click()
+        clickElement(countdownField)
         countdownField.typeText(countdownTitle)
         app.buttons["countdown.add"].click()
         XCTAssertTrue(app.staticTexts[countdownTitle].waitForExistence(timeout: 5))
+        // Close the composer sheet so subsequent navigation can proceed.
+        if app.sheets.firstMatch.exists {
+            app.typeKey(.escape, modifierFlags: [])
+        }
 
         openSection("habits", in: app)
         let habitTitle = "UI habit \(suffix)"
         let habitField = app.textFields["habit.title"]
         XCTAssertTrue(habitField.waitForExistence(timeout: 5))
-        habitField.click()
+        clickElement(habitField)
         habitField.typeText(habitTitle)
         app.buttons["habit.add"].click()
         XCTAssertTrue(app.staticTexts[habitTitle].waitForExistence(timeout: 5))
@@ -107,7 +128,7 @@ final class CozyTimeUITests: XCTestCase {
         openSection("settings", in: app)
         let mascotName = app.textFields["settings.mascotName"]
         XCTAssertTrue(mascotName.waitForExistence(timeout: 5))
-        mascotName.click()
+        clickElement(mascotName)
         mascotName.typeKey("a", modifierFlags: [.command])
         mascotName.typeText("Mochi")
         XCTAssertEqual(mascotName.value as? String, "Mochi")
@@ -139,33 +160,54 @@ final class CozyTimeUITests: XCTestCase {
     @MainActor
     private func launchApp(extraArguments: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-ui-testing"] + extraArguments
+        app.launchEnvironment["COZYTIME_UI_TESTING"] = "1"
+        app.launchArguments = [
+            "-ui-testing",
+            "-ApplePersistenceIgnoreState",
+            "YES"
+        ] + extraArguments
         app.launch()
+        app.activate()
         return app
     }
 
     @MainActor
     private func openSection(_ section: String, in app: XCUIApplication) {
-        let item = app.descendants(matching: .any)["sidebar.\(section)"].firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "Missing sidebar item \(section)")
-        item.click()
-        let screen = app.descendants(matching: .any)["screen.\(section)"].firstMatch
-        if !screen.waitForExistence(timeout: 3) {
-            item.click()
+        let identifier = "sidebar.\(section)"
+        let deadline = Date().addingTimeInterval(8)
+
+        while Date() < deadline {
+            let screen = app.descendants(matching: .any)["screen.\(section)"].firstMatch
+            if screen.exists {
+                return
+            }
+
+            let button = app.buttons[identifier].firstMatch
+            let item = button.exists ? button : app.descendants(matching: .any)[identifier].firstMatch
+            if item.waitForExistence(timeout: 0.5) {
+                if item.isHittable {
+                    item.click()
+                } else {
+                    item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+                }
+
+                if screen.waitForExistence(timeout: 1.5) {
+                    return
+                }
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.15))
         }
-        XCTAssertTrue(screen.waitForExistence(timeout: 5), "Did not open section \(section)")
+
+        XCTFail("Did not open section \(section)")
     }
 
     @MainActor
-    private func waitForTextField(_ field: XCUIElement, toClear text: String, timeout: TimeInterval = 5) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let value = field.value as? String ?? ""
-            if !value.contains(text) {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    private func clickElement(_ element: XCUIElement) {
+        if element.isHittable {
+            element.click()
+        } else {
+            element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
         }
-        return false
     }
 }

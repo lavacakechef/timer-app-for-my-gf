@@ -51,6 +51,15 @@ final class NotificationService: ObservableObject {
         content.title = draft.title
         content.body = draft.body
         content.sound = .default
+        if draft.isTimeSensitive {
+            content.interruptionLevel = .timeSensitive
+        }
+        // Group related notifications under a shared thread so Notification
+        // Center collapses (e.g.) multiple focus completions instead of
+        // stacking them as separate rows.
+        if !draft.threadIdentifier.isEmpty {
+            content.threadIdentifier = draft.threadIdentifier
+        }
 
         let interval = max(1, draft.fireDate.timeIntervalSinceNow)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)

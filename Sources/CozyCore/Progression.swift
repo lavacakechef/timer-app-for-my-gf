@@ -1,10 +1,13 @@
 import Foundation
 
 public enum PetStage: String, Codable, CaseIterable, Sendable {
+    // Each stage names Mochi's role/age so the ladder reads as her life-stages. Previously
+    // the highest tier was "Cozy Expert," which framed the user's mastery — breaking the
+    // mascot-life-stage progression. Now it's Mochi's stage all the way up.
     case puppy = "Puppy"
     case studyBuddy = "Study Buddy"
     case deskGuardian = "Desk Guardian"
-    case cozyExpert = "Cozy Expert"
+    case cozyExpert = "Cozy Companion"
 }
 
 public enum RewardRarity: String, Codable, CaseIterable, Sendable {
@@ -32,11 +35,15 @@ public enum RewardRarity: String, Codable, CaseIterable, Sendable {
     }
 
     public var duplicatePaws: Int {
+        // Halved/quartered per economy rebalance (Scenario B). Compensates
+        // for the per-session bonus that previously stacked with the +1
+        // long-session bonus to push 165-min totals to ~124 paws — far
+        // ahead of the shop ceiling. Tone-safe: still always &gt;= 1.
         switch self {
         case .everyday: 1
-        case .cozy: 2
-        case .special: 4
-        case .dream: 7
+        case .cozy: 1
+        case .special: 2
+        case .dream: 4
         }
     }
 }
@@ -174,9 +181,9 @@ public enum CozyProgression {
             category: "Mascot accessory",
             symbolName: "sparkles",
             colorHex: "#F2AFC5",
-            coinCost: 4,
+            coinCost: 8,
             requiredLevel: 1,
-            description: "A tiny star bow for Mochi's good-focus days."
+            description: "A glittery pink bow that catches the light when Mochi tilts her head."
         ),
         ShopCatalogItem(
             id: "strawberry-bandana",
@@ -184,9 +191,9 @@ public enum CozyProgression {
             category: "Mascot accessory",
             symbolName: "heart.fill",
             colorHex: "#FF7DA8",
-            coinCost: 6,
+            coinCost: 10,
             requiredLevel: 1,
-            description: "A soft pink bandana for tiny wins."
+            description: "Sweet strawberry pattern — Mochi's go-to scarf on celebrate days."
         ),
         ShopCatalogItem(
             id: "bubble-tea",
@@ -194,9 +201,9 @@ public enum CozyProgression {
             category: "Care treat",
             symbolName: "cup.and.saucer.fill",
             colorHex: "#FFD7B8",
-            coinCost: 8,
+            coinCost: 12,
             requiredLevel: 1,
-            description: "A small treat after showing up."
+            description: "Warm peach-honey boba in a tiny cup. Mochi takes a slow sip."
         ),
         ShopCatalogItem(
             id: "rose-ring-timer-skin",
@@ -204,9 +211,9 @@ public enum CozyProgression {
             category: "Timer skin",
             symbolName: "heart.circle.fill",
             colorHex: "#B84E73",
-            coinCost: 10,
+            coinCost: 14,
             requiredLevel: 1,
-            description: "A soft pink timer accent for cozy starts."
+            description: "Soft rose ring around the timer — a hug for the seconds."
         ),
         ShopCatalogItem(
             id: "peach-hourglass-timer-skin",
@@ -214,9 +221,9 @@ public enum CozyProgression {
             category: "Timer skin",
             symbolName: "hourglass",
             colorHex: "#A8512D",
-            coinCost: 12,
+            coinCost: 16,
             requiredLevel: 2,
-            description: "A warmer timer mood for deadline days."
+            description: "Peach sand drifts down the hourglass while you focus. Warm, slow."
         ),
         ShopCatalogItem(
             id: "pill-timer-frame",
@@ -224,9 +231,9 @@ public enum CozyProgression {
             category: "Timer frame",
             symbolName: "capsule.fill",
             colorHex: "#F2AFC5",
-            coinCost: 12,
+            coinCost: 18,
             requiredLevel: 2,
-            description: "Switch the big timer from ring to a soft pill."
+            description: "Swap the round timer for a softer pill shape. Less clock, more cozy."
         ),
         ShopCatalogItem(
             id: "focus-headphones",
@@ -234,9 +241,9 @@ public enum CozyProgression {
             category: "Mascot accessory",
             symbolName: "headphones",
             colorHex: "#2F6F64",
-            coinCost: 12,
+            coinCost: 20,
             requiredLevel: 2,
-            description: "Soft headphones for one-task mode."
+            description: "Tiny jade headphones for Mochi. The world quiets when they go on."
         ),
         ShopCatalogItem(
             id: "lofi-moon-timer-skin",
@@ -244,9 +251,9 @@ public enum CozyProgression {
             category: "Timer skin",
             symbolName: "moon.stars.fill",
             colorHex: "#496FA6",
-            coinCost: 18,
+            coinCost: 35,
             requiredLevel: 3,
-            description: "Cool blue timer accents for late study."
+            description: "Moonlit blue timer for night sessions. Stars drift across the ring."
         ),
         ShopCatalogItem(
             id: "hourglass-timer-frame",
@@ -254,9 +261,9 @@ public enum CozyProgression {
             category: "Timer frame",
             symbolName: "hourglass",
             colorHex: "#A8512D",
-            coinCost: 20,
+            coinCost: 38,
             requiredLevel: 3,
-            description: "A collectible hourglass display for focus blocks."
+            description: "Pivots the timer into a tall hourglass. Sand whispers as it falls."
         ),
         ShopCatalogItem(
             id: "lofi-speaker",
@@ -264,9 +271,9 @@ public enum CozyProgression {
             category: "Room decor",
             symbolName: "speaker.wave.2.fill",
             colorHex: "#496FA6",
-            coinCost: 14,
+            coinCost: 22,
             requiredLevel: 2,
-            description: "A quiet corner sound for focus blocks."
+            description: "Bluetooth lofi speaker for Mochi's room. Soft beats, no lyrics."
         ),
         ShopCatalogItem(
             id: "peach-desk-lamp",
@@ -274,9 +281,9 @@ public enum CozyProgression {
             category: "Room decor",
             symbolName: "lamp.desk.fill",
             colorHex: "#FFD7B8",
-            coinCost: 16,
+            coinCost: 30,
             requiredLevel: 3,
-            description: "A warm lamp for the Rewards Room."
+            description: "Peach desk lamp with a fluttery moth shadow. Pure 9pm energy."
         ),
         ShopCatalogItem(
             id: "mini-calendar",
@@ -284,9 +291,9 @@ public enum CozyProgression {
             category: "Room decor",
             symbolName: "calendar",
             colorHex: "#8CB8D0",
-            coinCost: 18,
+            coinCost: 32,
             requiredLevel: 3,
-            description: "A tiny wall calendar for upcoming plans."
+            description: "Pin-up wall calendar with hand-drawn stickers on the dates that matter."
         ),
         ShopCatalogItem(
             id: "jade-focus-mat",
@@ -294,9 +301,9 @@ public enum CozyProgression {
             category: "Room decor",
             symbolName: "rectangle.roundedtop.fill",
             colorHex: "#2F6F64",
-            coinCost: 22,
+            coinCost: 50,
             requiredLevel: 4,
-            description: "Mochi's little study spot."
+            description: "Jade-green mat Mochi curls up on. It's where the best ideas land."
         ),
         ShopCatalogItem(
             id: "study-hoodie",
@@ -304,9 +311,9 @@ public enum CozyProgression {
             category: "Mascot outfit",
             symbolName: "tshirt.fill",
             colorHex: "#DDEDE7",
-            coinCost: 24,
+            coinCost: 55,
             requiredLevel: 4,
-            description: "Cozy gear for longer sessions."
+            description: "Oversized mint hoodie for marathon study days. Mochi looks bookish."
         ),
         ShopCatalogItem(
             id: "night-hoodie",
@@ -314,9 +321,9 @@ public enum CozyProgression {
             category: "Mascot outfit",
             symbolName: "moon.stars.fill",
             colorHex: "#6E4C77",
-            coinCost: 28,
+            coinCost: 75,
             requiredLevel: 5,
-            description: "A quiet hoodie for late study sessions."
+            description: "Dusk-plum hoodie for 1 AM mode. Tiny stars stitched on the hood."
         ),
         ShopCatalogItem(
             id: "twinkle-wall-lights",
@@ -324,9 +331,9 @@ public enum CozyProgression {
             category: "Room decor",
             symbolName: "lightbulb.led.fill",
             colorHex: "#5F7114",
-            coinCost: 32,
+            coinCost: 100,
             requiredLevel: 6,
-            description: "Little lights that make the desk feel alive."
+            description: "Wasabi-glow fairy lights strung around the desk. Twinkle slowly on focus."
         ),
         ShopCatalogItem(
             id: "cloud-bed",
@@ -334,9 +341,9 @@ public enum CozyProgression {
             category: "Room decor",
             symbolName: "bed.double.fill",
             colorHex: "#8CB8D0",
-            coinCost: 38,
+            coinCost: 130,
             requiredLevel: 7,
-            description: "A nap spot unlocked by showing up often."
+            description: "Cloud-soft bed for the Rewards Room. Mochi naps here between blocks."
         ),
         ShopCatalogItem(
             id: "gold-star-collar",
@@ -344,9 +351,9 @@ public enum CozyProgression {
             category: "Mascot outfit",
             symbolName: "star.circle.fill",
             colorHex: "#A8512D",
-            coinCost: 46,
+            coinCost: 170,
             requiredLevel: 9,
-            description: "A bright collar for your long-term study buddy."
+            description: "Gold-star collar — the final cosmetic. Earned over months of cozy work."
         )
     ]
 
@@ -374,6 +381,23 @@ public enum CozyProgression {
 
     public static func isPurchased(_ item: ShopCatalogItem, rewards: [RewardItem]) -> Bool {
         rewards.contains { $0.name == item.name && $0.category == item.category }
+    }
+
+    /// Resolves the rarity of an owned `RewardItem` by matching name+category
+    /// against the shop catalog. Falls back to `.everyday` for non-shop
+    /// rewards (seeded items, adventure-roll drops named outside the catalog).
+    /// Used by Inventory views to enable the rare-tier shimmer overlay
+    /// without piping rarity through every model boundary.
+    public static func rarity(for reward: RewardItem) -> RewardRarity {
+        guard let item = shopCatalog.first(where: {
+            $0.name == reward.name && $0.category == reward.category
+        }) else { return .everyday }
+        switch item.requiredLevel {
+        case ...2: return .everyday
+        case 3...4: return .cozy
+        case 5...7: return .special
+        default: return .dream
+        }
     }
 
     public static func canPurchase(_ item: ShopCatalogItem, database: CozyDatabase) -> Bool {
@@ -419,19 +443,32 @@ public enum CozyProgression {
         }
     }
 
+    /// Minimum completed reward-eligible sessions before `.dream` rarity is
+    /// eligible to drop. Per Stardew geode pity-counter precedent — keeps the
+    /// rarest tier from triggering on session 1 (a known cause of the early
+    /// shop feeling cheap).
+    public static let dreamPityThreshold = 15
+
     public static func adventureRoll(
         seed: Int,
         completedMinutes: Int,
-        existingRewards: [RewardItem]
+        existingRewards: [RewardItem],
+        lifetimeSessionCount: Int = 0
     ) -> AdventureRollResult {
-        let rarity = adventureRarity(for: seed)
+        var rarity = adventureRarity(for: seed)
+        // Pity gate — .dream only unlocks after the user has shown up a while.
+        // Drops back to .special until threshold is crossed.
+        if rarity == .dream && lifetimeSessionCount < dreamPityThreshold {
+            rarity = .special
+        }
         let candidates = adventureCatalog.filter { $0.rarity == rarity }
         let selectedIndex = abs((seed / 100) % max(1, candidates.count))
         let selected = candidates.isEmpty ? adventureCatalog[0] : candidates[selectedIndex]
         let alreadyOwned = existingRewards.contains { $0.name == selected.name && $0.category == selected.category }
         if alreadyOwned {
-            let longSessionBonus = completedMinutes >= 25 ? 1 : 0
-            return AdventureRollResult(rarity: rarity, reward: nil, duplicatePaws: rarity.duplicatePaws + longSessionBonus)
+            // Long-session bonus removed per economy rebalance — duplicate-paw
+            // value now lives entirely in `rarity.duplicatePaws`.
+            return AdventureRollResult(rarity: rarity, reward: nil, duplicatePaws: rarity.duplicatePaws)
         }
         return AdventureRollResult(rarity: rarity, reward: selected.reward)
     }

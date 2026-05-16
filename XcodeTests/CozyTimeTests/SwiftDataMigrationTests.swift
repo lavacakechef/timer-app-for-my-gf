@@ -174,4 +174,50 @@ final class SwiftDataMigrationTests: XCTestCase {
         XCTAssertFalse(store.rewards.contains { $0.name == "Focus Stamp" && $0.category == "Sticker" })
         XCTAssertEqual(store.focusSessions.reduce(0) { $0 + ($1.isRewardEligible ? $1.completedMinutes * 2 : 0) }, 0)
     }
+
+    func testCompleteTaskByTitleIsDeterministicWithIdenticalCreatedAt() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CozyTimeDeterministicCompleteTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let container = try CozySwiftDataSchema.makeContainer(inMemory: true)
+        let store = AppDataStore(
+            container: container,
+            legacyJSONURL: tempDirectory.appendingPathComponent("MissingData.json")
+        )
+        let sameMoment = Date(timeIntervalSinceReferenceDate: 100)
+        let lowerID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let higherID = UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFE")!
+
+        store.addTask(TaskItem(id: higherID, title: "Same name", createdAt: sameMoment))
+        store.addTask(TaskItem(id: lowerID, title: "Same name", createdAt: sameMoment))
+
+        store.completeTask(title: "Same name", at: Date(timeIntervalSinceReferenceDate: 200))
+
+        // With secondary sort by id, the lower-id task is the deterministic first match.
+        let completed = store.tasks.filter { $0.title == "Same name" && $0.isCompleted }
+        XCTAssertEqual(completed.count, 1)
+        XCTAssertEqual(completed.first?.id, lowerID, "deterministic completion must pick the same task every time, regardless of insertion order")
+    }
+
+    func testMigrationRenamesLegacyJSONToPreventReRun() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CozyTimeMigrationRenameTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let legacyURL = tempDirectory.appendingPathComponent("CozyTimeData.json")
+        let database = CozyDatabase(tasks: [TaskItem(title: "Migrated")])
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(database).write(to: legacyURL, options: [.atomic])
+
+        let container = try CozySwiftDataSchema.makeContainer(inMemory: true)
+        _ = AppDataStore(container: container, legacyJSONURL: legacyURL)
+
+        let migratedURL = legacyURL.appendingPathExtension("migrated")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyURL.path), "original JSON should be renamed after a successful migration")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: migratedURL.path), "migrated marker file should exist for recovery")
+    }
 }

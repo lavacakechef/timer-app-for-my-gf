@@ -4,6 +4,11 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var timerStore: FocusTimerStore
+    // Mascot name personalization (Apple HIG: "Personalize content with the
+    // user's name and preferences where possible"). Today subtitle previously
+    // hard-coded "Mochi" so renaming the mascot in Settings (e.g. "Pepper")
+    // failed to propagate here even though Focus subtitle did.
+    @AppStorage("mascotName") private var mascotName = "Mochi"
 
     private var todayTasks: [TaskItem] {
         dataStore.tasks.filter { !$0.isCompleted && CozyCalendar.isToday($0.dueDate) }
@@ -27,7 +32,7 @@ struct TodayView: View {
             VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
                 SectionHeader(
                     title: "Today",
-                    subtitle: "Pick one tiny step, earn paws, and let Mochi grow with you.",
+                    subtitle: "Pick one tiny step, earn paws, and let \(mascotName) grow with you.",
                     mascotState: todayMascotState
                 )
 
@@ -45,16 +50,20 @@ struct TodayView: View {
                 }
 
                 Text("Today’s Tasks")
-                    .font(.title2.weight(.bold))
+                    .font(CozyType.cardTitle)
                 if todayTasks.isEmpty {
+                    // Hero card above already owns the focus path. Empty Today CTA stays
+                    // on Today and offers adding a task — don't bounce her elsewhere.
                     EmptyStateView(
                         title: "Today is open",
-                        message: "Add one tiny task or start a quick focus session.",
+                        message: "Add one tiny task, or use the hero card above to start a focus session.",
                         mascotState: .idle,
-                        actionTitle: "Open Focus"
-                    ) {
-                        NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.focus.rawValue)
-                    }
+                        eyebrow: "Today",
+                        primaryActionTitle: "Open Tasks",
+                        primaryAction: {
+                            NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.tasks.rawValue)
+                        }
+                    )
                         .frame(minHeight: 260)
                 } else {
                     TaskList(tasks: todayTasks)
@@ -99,9 +108,32 @@ struct UpcomingView: View {
     }
 }
 
+// Time filter for the Tasks screen — replaces the old standalone Upcoming
+// section. "All" is the default; "Upcoming" is what the redirected legacy
+// .upcoming sidebar route lands on; "Today" / "Done" are extra utility filters.
+enum TaskTimeFilter: String, CaseIterable, Identifiable {
+    case all, today, upcoming, done
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all: "All"
+        case .today: "Today"
+        case .upcoming: "Upcoming"
+        case .done: "Done"
+        }
+    }
+}
+
 struct TasksView: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @State private var listFilter = "All"
+    @State private var timeFilter: TaskTimeFilter
+
+    // Optional initial filter set by the router (Upcoming legacy route opens
+    // Tasks with timeFilter pre-set to .upcoming).
+    init(initialTimeFilter: TaskTimeFilter = .all) {
+        _timeFilter = State(initialValue: initialTimeFilter)
+    }
 
     private var listNames: [String] {
         ["All"] + Array(Set(dataStore.tasks.map(\.listName))).sorted()
@@ -110,17 +142,45 @@ struct TasksView: View {
     private var filteredTasks: [TaskItem] {
         dataStore.tasks
             .filter { listFilter == "All" || $0.listName == listFilter }
+            .filter(timeMatches)
             .sorted { lhs, rhs in
                 if lhs.isCompleted != rhs.isCompleted { return !lhs.isCompleted }
                 return TaskFilters.sortByPriorityThenDueDate(lhs.filterRecord, rhs.filterRecord)
             }
     }
 
+    private func timeMatches(_ task: TaskItem) -> Bool {
+        switch timeFilter {
+        case .all:
+            return true
+        case .today:
+            guard let due = task.dueDate else { return false }
+            return Calendar.autoupdatingCurrent.isDateInToday(due) && !task.isCompleted
+        case .upcoming:
+            return !task.isCompleted && CozyCalendar.isUpcoming(task.dueDate)
+        case .done:
+            return task.isCompleted
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
                 SectionHeader(title: "Tasks", subtitle: "Lists, tags, priorities, and soft deadlines.", mascotState: .idle)
-                QuickAddBar(defaultDueDate: nil)
+                QuickAddBar(defaultDueDate: timeFilter == .upcoming
+                    ? Calendar.autoupdatingCurrent.date(byAdding: .day, value: 1, to: Date())
+                    : nil)
+                // Time filter — All / Today / Upcoming / Done. Sits above the
+                // list-name filter so the user can stack "Today + Inbox", etc.
+                CozySegmentedControl(
+                    options: TaskTimeFilter.allCases.map { CozySegmentOption($0.rawValue, title: $0.label) },
+                    selection: Binding(
+                        get: { timeFilter.rawValue },
+                        set: { timeFilter = TaskTimeFilter(rawValue: $0) ?? .all }
+                    ),
+                    minSegmentWidth: 88
+                )
+                .accessibilityIdentifier("tasks.timeFilter")
                 ScrollView(.horizontal, showsIndicators: false) {
                     CozySegmentedControl(
                         options: listNames.map { CozySegmentOption($0, title: $0) },
@@ -141,6 +201,7 @@ struct QuickAddBar: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var timerStore: FocusTimerStore
     @EnvironmentObject private var notifications: NotificationService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let defaultDueDate: Date?
 
     @State private var title = ""
@@ -151,6 +212,18 @@ struct QuickAddBar: View {
     @State private var hasDueDate: Bool
     @State private var isExpanded = false
     @State private var lastAddedTask: TaskItem?
+    /// When the user wants to create a new list, this becomes the active draft and
+    /// the picker is replaced with an inline text field.
+    @State private var isCreatingNewList = false
+    @State private var newListDraft = ""
+
+    /// Existing lists deduplicated + sorted, with "Inbox" pinned first.
+    private var existingLists: [String] {
+        var set = Set(dataStore.tasks.map(\.listName))
+        set.insert("Inbox")
+        let others = set.subtracting(["Inbox"]).sorted()
+        return ["Inbox"] + others
+    }
 
     init(defaultDueDate: Date?) {
         self.defaultDueDate = defaultDueDate
@@ -160,42 +233,25 @@ struct QuickAddBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                    titleField
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                        detailsButton
-                        addButton
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
-
-                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-                    titleField
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                        detailsButton
-                        addButton
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
+            CozyResponsiveFormRow {
+                titleField
+            } trailing: {
+                detailsButton
+                addButton
             }
 
             if isExpanded {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+                    CozyResponsiveFieldRow {
                         listField
                         dueDateField
                         durationStepper
                         priorityPicker
                     }
 
-                    VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-                        listField
-                        dueDateField
-                        durationStepper
-                        priorityPicker
+                    if hasDueDate {
+                        dueDateQuickChoicesRow
+                            .accessibilityIdentifier("quickAdd.dueDate.quickPicks")
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -212,20 +268,20 @@ struct QuickAddBar: View {
             }
         }
         .cozyCard()
-        .animation(.snappy(duration: 0.18), value: isExpanded)
+        .animation(CozyMotion.snappy(reduceMotion, duration: 0.18), value: isExpanded)
     }
 
     private var titleField: some View {
-        CozyLabeledControl(title: "Task", symbolName: "checklist", minWidth: 220) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("Add a tiny task...", text: $title)
-                    .onSubmit(addTask)
-                    .accessibilityIdentifier("quickAdd.title")
-                    .cozyTextInput(minWidth: 220, alignment: .leading)
-                if cleanTitle.isEmpty {
-                    CozyFieldHint(text: "Type a task title to add it.")
-                }
-            }
+        CozyLabeledControl(
+            title: "Task",
+            symbolName: "checklist",
+            minWidth: 220,
+            hint: cleanTitle.isEmpty ? "Type a task title to add it." : nil
+        ) {
+            TextField("Add a tiny task...", text: $title)
+                .onSubmit(addTask)
+                .accessibilityIdentifier("quickAdd.title")
+                .cozyTextInput(minWidth: 220, alignment: .leading)
         }
         .layoutPriority(1)
     }
@@ -236,7 +292,7 @@ struct QuickAddBar: View {
                 isExpanded.toggle()
             } label: {
                 Image(systemName: "slider.horizontal.3")
-                    .frame(width: 22, height: 22)
+                    .frame(width: 24, height: 24)
             }
             .cozyIconButton(size: CozyLayout.hitSize)
             .help(isExpanded ? "Hide task details" : "Show task details")
@@ -247,10 +303,93 @@ struct QuickAddBar: View {
 
     private var listField: some View {
         CozyLabeledControl(title: "List", symbolName: "tray.full") {
-            TextField("List", text: $listName)
+            // Picker over existing lists + "+ New list" option that switches to a TextField.
+            // The user explicitly asked for a dropdown when picking an existing list, with
+            // typing reserved for new-list creation. (Free-typing the same name every time
+            // led to mis-spelled duplicates like "inbox" vs "Inbox".)
+            if isCreatingNewList {
+                HStack(spacing: 6) {
+                    TextField("New list name", text: $newListDraft)
+                        .accessibilityIdentifier("quickAdd.newList")
+                        .cozyTextInput(width: 140, alignment: .leading)
+                        .onSubmit { commitNewList() }
+                    Button {
+                        commitNewList()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .frame(width: 16, height: 16)
+                    }
+                    .cozyIconButton(size: CozyLayout.compactHitSize)
+                    .disabled(newListDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help("Save new list")
+                    Button {
+                        isCreatingNewList = false
+                        newListDraft = ""
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(width: 16, height: 16)
+                    }
+                    .cozyIconButton(size: CozyLayout.compactHitSize)
+                    .help("Cancel")
+                }
+            } else {
+                // Visually-obvious dropdown affordance — gf's screenshot showed the
+                // earlier version reading as a text field because the chevron was
+                // caption-weight and tiny. Now: leading tray icon, bold body-weight
+                // list name, and a prominent up/down chevron pair that says
+                // "this is a Menu, click it." Native `.menuIndicator(.visible)` so
+                // SwiftUI's own indicator backs up the custom chevron.
+                Menu {
+                    ForEach(existingLists, id: \.self) { name in
+                        Button {
+                            listName = name
+                        } label: {
+                            if name == listName {
+                                Label(name, systemImage: "checkmark")
+                            } else {
+                                Text(name)
+                            }
+                        }
+                    }
+                    Divider()
+                    Button {
+                        newListDraft = ""
+                        isCreatingNewList = true
+                    } label: {
+                        Label("New list…", systemImage: "plus")
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "tray.full.fill")
+                            .font(CozyType.body.weight(.semibold))
+                            .foregroundStyle(CozyPalette.focusJade)
+                        Text(listName)
+                            .font(CozyType.body.weight(.semibold))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(CozyPalette.focusJade)
+                    }
+                    .frame(minWidth: 150, minHeight: CozyLayout.controlHeight, alignment: .leading)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .cozyControlShell(minWidth: 150, alignment: .leading)
                 .accessibilityIdentifier("quickAdd.list")
-                .cozyTextInput(width: 150, alignment: .leading)
+                .help(existingLists.count > 1
+                    ? "Pick from \(existingLists.count) lists or add a new one"
+                    : "Pick a list or create a new one")
+            }
         }
+    }
+
+    private func commitNewList() {
+        let trimmed = newListDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        listName = String(trimmed.prefix(40))
+        newListDraft = ""
+        isCreatingNewList = false
     }
 
     private var dueDateField: some View {
@@ -264,11 +403,15 @@ struct QuickAddBar: View {
                 )
                 .accessibilityIdentifier("quickAdd.hasDueDate")
                 if hasDueDate {
-                    CozyDateInput(date: $dueDate)
+                    CozyDateInput(date: $dueDate, label: "Task due date", includeInlineQuickChoices: false)
                         .accessibilityIdentifier("quickAdd.dueDate")
                 }
             }
         }
+    }
+
+    private var dueDateQuickChoicesRow: some View {
+        CozyDateInput(date: $dueDate, label: "Task due date", includeInlineQuickChoices: false).quickChoicesRow
     }
 
     private var durationStepper: some View {
@@ -280,11 +423,16 @@ struct QuickAddBar: View {
 
     private var priorityPicker: some View {
         CozyLabeledControl(title: "Priority", symbolName: "flag") {
+            // Segment labels now match PriorityBadge's mapping
+            // (0 = Low, 1 = Medium, 2 = High). Previously the segment said
+            // "Top" for value 2 while the resulting badge displayed "High" —
+            // the same priority shown under two different names depending on
+            // which surface you looked at.
             CozySegmentedControl(
                 options: [
                     CozySegmentOption(0, title: "Low"),
                     CozySegmentOption(1, title: "Med"),
-                    CozySegmentOption(2, title: "Top")
+                    CozySegmentOption(2, title: "High")
                 ],
                 selection: $priority,
                 minSegmentWidth: 52
@@ -337,9 +485,13 @@ struct QuickAddBar: View {
     }
 
     private var priorityLabel: String {
+        // Keep labels consistent with `PriorityBadge` (TaskViews.swift) which renders the
+        // same priority on each task row. Mixed "Top/Med/Low" footer + "Urgent/High/Medium/Low"
+        // badge above looked unintentional.
         switch priority {
-        case 2...: "Top"
-        case 1: "Med"
+        case 3...: "Urgent"
+        case 2: "High"
+        case 1: "Medium"
         default: "Low"
         }
     }
@@ -399,12 +551,18 @@ struct FirstSessionCard: View {
     @EnvironmentObject private var timerStore: FocusTimerStore
     @EnvironmentObject private var notifications: NotificationService
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
     @AppStorage("mascotName") private var mascotName = "Mochi"
 
     @State private var starterTitle = "First tiny session"
     @State private var messageIndex = 0
     @State private var petPulse = false
+    /// Selected preset duration in minutes. Tapping a chip below SELECTS (highlight) — the
+    /// user then taps the explicit "Start" CTA to actually begin. Previously chips silently
+    /// started a session, which was the strongest visible affordance on cold-open committing
+    /// the user to a 25-minute commitment without warning.
+    @State private var selectedMinutes: Int = 25
 
     private var theme: CozyTheme {
         CozyTheme.named(selectedTheme)
@@ -418,7 +576,7 @@ struct FirstSessionCard: View {
 
     private var heroMessage: String {
         let messages = [
-            "Click Mochi for a tiny mood boost.",
+            "Click \(mascotName) for a tiny mood boost.",
             "Tiny focus counts. Paws unlock decor.",
             "One clean block beats ten noisy tabs."
         ]
@@ -433,13 +591,12 @@ struct FirstSessionCard: View {
                 heroActionPanel
             }
 
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 heroMascotPanel
                 heroActionPanel
             }
         }
         .cozyHeroCard()
-        .accessibilityIdentifier("firstSession.card")
     }
 
     private var heroMascotPanel: some View {
@@ -469,12 +626,13 @@ struct FirstSessionCard: View {
 
     private var mascotButton: some View {
         Button {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) {
+            withAnimation(CozyMotion.spring(reduceMotion, response: 0.28, damping: 0.62)) {
                 petPulse.toggle()
                 messageIndex += 1
             }
         } label: {
-            EquippedMascotView(state: timerStore.isActive ? activeMascotState : .idle, size: petPulse ? 136 : 128, rewards: dataStore.rewards)
+            EquippedMascotView(state: timerStore.isActive ? activeMascotState : .idle, size: .hero, rewards: dataStore.rewards)
+                .scaleEffect(petPulse ? 1.06 : 1.0)
         }
         .cozyPressable(pressedScale: 0.94, hoverScale: 1.035)
         .contentShape(Circle())
@@ -483,13 +641,13 @@ struct FirstSessionCard: View {
     }
 
     private var heroActionPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(timerStore.isActive ? "Now focusing" : "Start a cozy block")
-                    .font(.system(size: 30, weight: .black, design: .rounded))
+                    .font(CozyType.heroCardTitle)
                     .lineLimit(2)
                 Text(timerStore.isActive ? "\(mascotName) is keeping the room quiet." : heroMessage)
-                    .font(.callout)
+                    .font(CozyType.body)
                     .foregroundStyle(CozyPalette.secondaryText(colorScheme))
                     .lineLimit(2)
             }
@@ -499,7 +657,7 @@ struct FirstSessionCard: View {
             LazyVGrid(columns: metricColumns, spacing: 10) {
                 SoftMetricBadge(title: "focus today", value: "\(focusMinutesToday)m", symbol: "timer", color: CozyPalette.focusJade)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                SoftMetricBadge(title: "Mochi", value: "Lv. \(dataStore.progression.level)", symbol: "pawprint.fill", color: theme.reward)
+                SoftMetricBadge(title: mascotName, value: "Lv. \(dataStore.progression.level)", symbol: "pawprint.fill", color: theme.reward)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 SoftMetricBadge(title: "paws", value: "\(dataStore.progression.coinsAvailable)", symbol: "sparkles", color: CozyPalette.habitLavender)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -507,7 +665,9 @@ struct FirstSessionCard: View {
 
             NextUnlockView(database: dataStore.database)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Cap horizontal stretch so the action column doesn't run wider than
+        // the mascot panel beside it on big windows (visual disconnection).
+        .frame(maxWidth: 560, alignment: .leading)
     }
 
     private var startControls: some View {
@@ -533,50 +693,28 @@ struct FirstSessionCard: View {
     }
 
     private var presetButtons: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                focusPresetButton(minutes: 5, symbol: "bolt.fill", isPrimary: false)
-                    .accessibilityIdentifier("firstSession.start.5")
-                focusPresetButton(minutes: 15, symbol: "timer", isPrimary: false)
-                    .accessibilityIdentifier("firstSession.start.15")
-                focusPresetButton(minutes: 25, symbol: "timer", isPrimary: true)
-                    .accessibilityIdentifier("firstSession.start.25")
-            }
-            LazyVGrid(columns: CozyLayout.adaptiveColumns(minimum: 94), spacing: 8) {
-                focusPresetButton(minutes: 5, symbol: "bolt.fill", isPrimary: false)
-                    .accessibilityIdentifier("firstSession.start.5")
-                focusPresetButton(minutes: 15, symbol: "timer", isPrimary: false)
-                    .accessibilityIdentifier("firstSession.start.15")
-                focusPresetButton(minutes: 25, symbol: "timer", isPrimary: true)
-                    .accessibilityIdentifier("firstSession.start.25")
-            }
-        }
-    }
+        VStack(alignment: .leading, spacing: 12) {
+            // CozyDurationPicker: shared chip + slider widget. Same recipe used by
+            // FocusSetupCard so duration-picking is one component, not two.
+            CozyDurationPicker(
+                minutes: $selectedMinutes,
+                accent: CozyPalette.focusJade,
+                identifierPrefix: "firstSession"
+            )
 
-    private func focusPresetButton(minutes: Int, symbol: String, isPrimary: Bool) -> some View {
-        Button {
-            start(minutes: minutes)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: symbol)
-                    .font(.caption.weight(.black))
-                Text("\(minutes)m")
-                    .font(.callout.weight(.bold))
+            // Explicit Start CTA so the chips above SELECT only; tapping a chip alone never
+            // commits to a session.
+            Button {
+                start(minutes: selectedMinutes)
+            } label: {
+                Label("Start \(CozyFormatters.durationLabel(TimeInterval(selectedMinutes * 60))) focus", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .frame(minWidth: 92, minHeight: CozyLayout.hitSize)
-            .foregroundStyle(isPrimary ? .white : CozyPalette.focusJade)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isPrimary ? CozyPalette.focusJade : CozyPalette.cardFill(colorScheme).opacity(colorScheme == .dark ? 0.46 : 0.82))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isPrimary ? Color.white.opacity(0.20) : CozyPalette.focusJade.opacity(0.22), lineWidth: 1)
-            )
+            .cozyPrimaryButton(fullWidth: true)
+            .disabled(!timerStore.canStartNewSession)
+            .help(timerStore.canStartNewSession ? "Start a focus session at the selected length" : "A timer is already active")
+            .accessibilityIdentifier("firstSession.start")
         }
-        .cozyPressable(pressedScale: 0.965, hoverScale: 1.015)
-        .disabled(!timerStore.canStartNewSession)
-        .opacity(timerStore.canStartNewSession ? 1 : 0.45)
     }
 
     private var metricColumns: [GridItem] {
@@ -591,8 +729,8 @@ struct FirstSessionCard: View {
         Label(theme.id, systemImage: theme.symbolName)
             .font(.caption.weight(.semibold))
             .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(
                 Capsule()
                     .fill(CozyPalette.cardFill(colorScheme).opacity(colorScheme == .dark ? 0.50 : 0.72))
@@ -664,20 +802,35 @@ struct DailyQuestCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Today’s cozy quests")
-                        .font(.title3.weight(.bold))
-                    Text("\(completedCount) of \(quests.count) done. Any one of these counts today.")
-                        .font(.callout)
+        VStack(alignment: .leading, spacing: 16) {
+            // Header is itself a navigation button → opens Stats. Previously only
+            // the three individual quest pills below were clickable, so users
+            // tapping the title or the % readout went nowhere ("progress doesn't
+            // open" feedback).
+            Button {
+                NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.stats.rawValue)
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Today’s cozy quests")
+                            .font(CozyType.cardTitle)
+                        Text("\(completedCount) of \(quests.count) done. Any one of these counts today.")
+                            .font(CozyType.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("\(Int(Double(completedCount) / Double(quests.count) * 100))%")
+                        .font(CozyType.metricSmall)
+                        .foregroundStyle(CozyPalette.berry)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Text("\(Int(Double(completedCount) / Double(quests.count) * 100))%")
-                    .font(.system(.title3, design: .rounded).weight(.black))
-                    .foregroundStyle(CozyPalette.berry)
+                .contentShape(Rectangle())
             }
+            .cozyPressable()
+            .accessibilityIdentifier("dailyQuest.openStats")
+            .help("Open Stats for the full progress picture")
 
             CozyLinearProgressBar(value: Double(completedCount), total: Double(quests.count), color: CozyPalette.berry)
                 .accessibilityLabel("Daily quest progress")
@@ -736,12 +889,12 @@ struct QuestPill: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: isDone ? "checkmark.seal.fill" : symbol)
-                    .font(.title3.weight(.bold))
+                    .font(CozyType.cardTitle)
                     .frame(width: 24)
                     .foregroundStyle(accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.callout.weight(.semibold))
+                        .font(CozyType.body.weight(.semibold))
                         .lineLimit(2)
                     Text(isDone ? "done" : reward)
                         .font(.caption)
@@ -755,7 +908,7 @@ struct QuestPill: View {
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
                     .fill(accent.opacity(isDone ? 0.14 : 0.09))
             )
         }
@@ -771,8 +924,13 @@ struct TaskList: View {
     var body: some View {
         if tasks.isEmpty {
             VStack(spacing: 12) {
-                EmptyStateView(title: "Nothing here yet", message: "Capture one small next step.", mascotState: .idle)
-                    .frame(minHeight: 180)
+                EmptyStateView(
+                    title: "A spot for your first task",
+                    message: "Capture one small next step — anything that nudges the day forward.",
+                    mascotState: .idle,
+                    eyebrow: "Tasks"
+                )
+                .frame(minHeight: 180)
                 StarterTaskChips()
             }
         } else {
@@ -833,6 +991,7 @@ struct TaskRow: View {
     @EnvironmentObject private var timerStore: FocusTimerStore
     @EnvironmentObject private var notifications: NotificationService
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let task: TaskItem
     @State private var lastCompletionAction: Bool?
     @State private var isEditing = false
@@ -847,21 +1006,22 @@ struct TaskRow: View {
                     toggleCompletion()
                 } label: {
                     Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .frame(width: CozyLayout.hitSize, height: CozyLayout.hitSize)
+                        .font(CozyType.cardTitle)
+                        .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.plain)
                 .cozyPressable(pressedScale: 0.90, hoverScale: 1.08)
-                .contentShape(Circle())
+                .contentShape(Rectangle())
                 .foregroundStyle(task.isCompleted ? CozyPalette.focusJade : .secondary)
                 .help(task.isCompleted ? "Mark incomplete" : "Complete task")
                 .accessibilityLabel(task.isCompleted ? "Mark \(task.title) incomplete" : "Complete \(task.title)")
                 .accessibilityIdentifier("task.complete")
+                .padding(.top, 2)
+                .alignmentGuide(.top) { dimension in dimension[.top] }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
+                    HStack(alignment: .firstTextBaseline) {
                         Text(task.title)
-                            .font(.headline)
+                            .font(CozyType.rowTitle)
                             .lineLimit(2)
                             .layoutPriority(1)
                             .strikethrough(task.isCompleted)
@@ -871,7 +1031,7 @@ struct TaskRow: View {
                     }
                     if !task.notes.isEmpty {
                         Text(task.notes)
-                            .font(.callout)
+                            .font(CozyType.body)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -880,13 +1040,41 @@ struct TaskRow: View {
                     .foregroundStyle(.secondary)
                 }
                 .layoutPriority(1)
+                .frame(maxHeight: .infinity, alignment: .top)
 
-                VStack(alignment: .trailing, spacing: 8) {
+                // Focus + edit + delete share one horizontal baseline so the
+                // three controls read as a single action row rather than a
+                // tall primary button with floating icons beneath it.
+                HStack(spacing: 8) {
+                    Button {
+                        beginEditing()
+                    } label: {
+                        Image(systemName: "pencil")
+                            .frame(width: 20, height: 20)
+                    }
+                    .cozyIconButton(size: CozyLayout.compactHitSize)
+                    .help("Edit task")
+                    .accessibilityLabel("Edit \(task.title)")
+
+                    Button(role: .destructive) {
+                        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
+                            isConfirmingDelete.toggle()
+                            isEditing = false
+                        }
+                    } label: {
+                        Image(systemName: "trash")
+                            .frame(width: 20, height: 20)
+                    }
+                    .cozyIconButton(size: CozyLayout.compactHitSize)
+                    .help("Delete task")
+                    .accessibilityLabel("Delete \(task.title)")
+
                     Button {
                         guard timerStore.canStartNewSession else { return }
                         UserDefaults.standard.set(FocusBoost.default.id, forKey: "focus.activeBoostID")
                         timerStore.start(taskTitle: task.title, taskID: task.id, duration: TimeInterval(task.estimatedMinutes * 60))
                         scheduleFocusCompletion()
+                        NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.focus.rawValue)
                     } label: {
                         Label("Focus", systemImage: "play.fill")
                             .frame(width: 76)
@@ -896,32 +1084,8 @@ struct TaskRow: View {
                     .help(task.isCompleted ? "Task is already complete" : timerStore.canStartNewSession ? "Start a focus session for this task" : "A timer is already active")
                     .accessibilityIdentifier("task.focus")
                     .fixedSize()
-
-                    HStack(spacing: 8) {
-                        Button {
-                            beginEditing()
-                        } label: {
-                            Image(systemName: "pencil")
-                                .frame(width: 18, height: 18)
-                        }
-                        .cozyIconButton(size: CozyLayout.compactHitSize)
-                        .help("Edit task")
-                        .accessibilityLabel("Edit \(task.title)")
-
-                        Button(role: .destructive) {
-                            withAnimation(.snappy(duration: 0.18)) {
-                                isConfirmingDelete.toggle()
-                                isEditing = false
-                            }
-                        } label: {
-                            Image(systemName: "trash")
-                                .frame(width: 18, height: 18)
-                        }
-                        .cozyIconButton(size: CozyLayout.compactHitSize)
-                        .help("Delete task")
-                        .accessibilityLabel("Delete \(task.title)")
-                    }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
             if isEditing {
                 editPanel
@@ -941,25 +1105,11 @@ struct TaskRow: View {
     }
 
     private var editPanel: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                editTitleField
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                    editEstimateField
-                    editActions
-                }
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-                editTitleField
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                    editEstimateField
-                    editActions
-                }
-                .fixedSize(horizontal: true, vertical: false)
-            }
+        CozyResponsiveFormRow {
+            editTitleField
+        } trailing: {
+            editEstimateField
+            editActions
         }
         .padding(12)
         .background(
@@ -989,17 +1139,21 @@ struct TaskRow: View {
     private var editActions: some View {
         CozyLabeledControl(title: "Action", symbolName: "checkmark.circle", minWidth: 174) {
             HStack(spacing: 8) {
+                // Width parity with the Keep/Delete pair in deletePanel and the
+                // confirm rows in HabitStatsViews / CountdownViews (76/76).
+                // Apple HIG buttons: "When you display two buttons side by side,
+                // give them matching widths." Was: 70/82 (12pt drift).
                 Button("Cancel") {
-                    withAnimation(.snappy(duration: 0.18)) {
+                    withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                         isEditing = false
                     }
                 }
-                .cozyGhostButton(minWidth: 70)
+                .cozyGhostButton(minWidth: 76)
 
                 Button("Save") {
                     saveEdit()
                 }
-                .cozyPrimaryButton(minWidth: 82)
+                .cozyPrimaryButton(minWidth: 76)
                 .disabled(cleanEditTitle.isEmpty)
             }
         }
@@ -1011,12 +1165,13 @@ struct TaskRow: View {
                 .font(CozyType.captionStrong)
                 .foregroundStyle(CozyPalette.overdue)
             Spacer()
+            // Width parity per HIG sibling-button rule. Was 64/76 (12pt drift).
             Button("Keep") {
-                withAnimation(.snappy(duration: 0.18)) {
+                withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                     isConfirmingDelete = false
                 }
             }
-            .cozyGhostButton(minWidth: 64)
+            .cozyGhostButton(minWidth: 76)
             Button(role: .destructive) {
                 dataStore.deleteTask(id: task.id)
                 CozyFeedback.play(.delete)
@@ -1025,7 +1180,7 @@ struct TaskRow: View {
             }
             .cozyDestructiveButton(minWidth: 76)
         }
-        .padding(10)
+        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(CozyPalette.overdue.opacity(0.08))
@@ -1034,7 +1189,7 @@ struct TaskRow: View {
 
     private func toggleCompletion() {
         let willComplete = !task.isCompleted
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             dataStore.toggleTaskCompletion(id: task.id)
             lastCompletionAction = willComplete
         }
@@ -1042,7 +1197,7 @@ struct TaskRow: View {
     }
 
     private func undoCompletionAction() {
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             dataStore.toggleTaskCompletion(id: task.id)
             lastCompletionAction = nil
         }
@@ -1052,7 +1207,7 @@ struct TaskRow: View {
     private func beginEditing() {
         editTitle = task.title
         editMinutes = task.estimatedMinutes
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             isEditing = true
             isConfirmingDelete = false
         }
@@ -1068,7 +1223,7 @@ struct TaskRow: View {
         updated.title = cleanEditTitle
         updated.estimatedMinutes = editMinutes
         dataStore.updateTask(updated)
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             isEditing = false
         }
         CozyFeedback.play(.add)
@@ -1107,7 +1262,7 @@ struct TaskRow: View {
             Label(item.title, systemImage: item.symbol)
                 .lineLimit(1)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .padding(.vertical, 4)
                 .background(
                     Capsule()
                         .fill(CozyPalette.quietContainer(colorScheme).opacity(0.72))
@@ -1144,25 +1299,50 @@ struct TaskRow: View {
 }
 
 struct PriorityBadge: View {
+    @Environment(\.colorScheme) private var colorScheme
     let priority: Int
 
-    var body: some View {
-        let label = switch priority {
-        case 2...: "Top"
-        case 1: "Med"
+    // Labels follow Linear / Asana convention (Urgent / High / Medium / Low) instead of
+    // the ambiguous "Top" / "Med" shorthand. SF Symbol prefix gives a glanceable severity
+    // cue at chip size. Colors map to severity semantics:
+    //   3+ = Urgent → overdue (warm red-brown, "act now")
+    //   2  = High   → persimmon (orange, "soon")
+    //   1  = Medium → wasabi text-safe (warm yellow-green, "steady")
+    //   0  = Low    → muted secondary (no urgency / no badge)
+    private var priorityLabel: String {
+        switch priority {
+        case 3...: "Urgent"
+        case 2: "High"
+        case 1: "Medium"
         default: "Low"
         }
-        let color = switch priority {
-        case 2...: CozyPalette.overdue
-        case 1: CozyPalette.persimmon
-        default: CozyPalette.focusJade
-        }
+    }
 
-        Text(label)
-            .font(.caption2.weight(.bold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(color.opacity(0.15)))
-            .foregroundStyle(color)
+    private var priorityIcon: String {
+        switch priority {
+        case 3...: "exclamationmark.triangle.fill"
+        case 2: "exclamationmark.circle.fill"
+        case 1: "circle.fill"
+        default: "circle"
+        }
+    }
+
+    private var priorityColor: Color {
+        switch priority {
+        case 3...: CozyPalette.overdue
+        case 2: CozyPalette.persimmon
+        case 1: CozyPalette.wasabiText
+        default: CozyPalette.secondaryText(colorScheme)
+        }
+    }
+
+    var body: some View {
+        CozyPill(
+            title: priorityLabel,
+            symbolName: priorityIcon,
+            intent: .accent(priorityColor),
+            size: .small
+        )
+        .accessibilityLabel("Priority: \(priorityLabel)")
     }
 }

@@ -2,12 +2,29 @@ import CozyCore
 import Combine
 import Foundation
 
+enum FocusDefaults {
+    static let lastFocusMinutesKey = "focus.lastFocusMinutes"
+
+    static func rememberedFocusMinutes(in defaults: UserDefaults = .standard) -> Int {
+        let raw = defaults.integer(forKey: lastFocusMinutesKey)
+        return raw == 0 ? 25 : max(1, raw)
+    }
+}
+
 @MainActor
 final class FocusTimerStore: ObservableObject {
     @Published private(set) var snapshot: FocusTimerSnapshot
     @Published private(set) var currentDate = Date()
     @Published var activeTaskTitle: String
     @Published var activeTaskID: UUID?
+    /// Number of 5-minute boundaries the current session has crossed. Resets
+    /// on `start`/`reset`/`cancel`. Drives the in-session paw-ticker overlay.
+    @Published private(set) var pawsCrossedThisSession: Int = 0
+    /// Fires once each time `pawsCrossedThisSession` advances. The focus
+    /// screen subscribes to this to spawn the "+1 paw" drifter + ring pulse.
+    /// Apple Fitness boundary-celebration precedent; values are not coalesced
+    /// so each crossing yields its own visual.
+    let pawBoundaryDidCross = PassthroughSubject<Int, Never>()
 
     private let defaults: UserDefaults
     private let snapshotKey = "focus.snapshot.v1"
@@ -16,12 +33,14 @@ final class FocusTimerStore: ObservableObject {
     private let processActivityReason = "CozyTime has an active focus timer."
     private var ticker: AnyCancellable?
     private var keepsProcessAlive = false
+    /// Per-session paw-boundary tracking — credited seconds / 300 (5-min).
+    private static let pawBoundarySeconds: Double = 300
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, now: Date = Date()) {
         self.defaults = defaults
         if let data = defaults.data(forKey: snapshotKey),
            let decoded = try? JSONDecoder().decode(FocusTimerSnapshot.self, from: data) {
-            snapshot = decoded
+            snapshot = Self.recoverIfStale(decoded, now: now)
         } else {
             snapshot = FocusTimerSnapshot()
         }
@@ -33,6 +52,26 @@ final class FocusTimerStore: ObservableObject {
         }
         updateTicker()
         updateProcessActivity()
+    }
+
+    /// Guards against the "zombie timer" failure mode: if the user quits mid-focus and walks
+    /// away for hours, the persisted snapshot would otherwise be loaded as `.running` and
+    /// `refreshCompletion(at:)` would immediately auto-credit a session the user did not
+    /// actually do. If we detect that wall-clock has advanced past the duration AND we're
+    /// more than a generous grace beyond, treat it as needing the user's manual review.
+    /// `complete()` flow puts the snapshot into `.completed`, which surfaces the completion
+    /// review card with reward — but the grace check below limits this to a reasonable
+    /// gap (10 minutes after the session would have ended). Anything longer than that is
+    /// almost certainly an "I forgot to quit cleanly" situation, so we discard.
+    private static func recoverIfStale(_ snapshot: FocusTimerSnapshot, now: Date) -> FocusTimerSnapshot {
+        guard snapshot.state == .running, let startDate = snapshot.startDate else { return snapshot }
+        let expectedEnd = startDate.addingTimeInterval(snapshot.duration + snapshot.accumulatedPause)
+        let elapsedPastEnd = now.timeIntervalSince(expectedEnd)
+        if elapsedPastEnd > 10 * 60 {
+            // App was AFK long past the session boundary — discard rather than auto-credit.
+            return FocusTimerSnapshot(duration: snapshot.duration)
+        }
+        return snapshot
     }
 
     var isRunning: Bool {
@@ -62,9 +101,18 @@ final class FocusTimerStore: ObservableObject {
         activeTaskID = taskID
         snapshot = TimerEngine.start(at: date, duration: duration)
         currentDate = date
+        pawsCrossedThisSession = 0   // Fresh session, no boundaries crossed yet.
         updateTicker()
         updateProcessActivity()
         save()
+    }
+
+    func startRememberedQuickFocus(defaults: UserDefaults = .standard, at date: Date = Date()) {
+        start(
+            taskTitle: "Quick focus",
+            duration: TimeInterval(FocusDefaults.rememberedFocusMinutes(in: defaults) * 60),
+            at: date
+        )
     }
 
     func pause(at date: Date = Date()) {
@@ -86,6 +134,7 @@ final class FocusTimerStore: ObservableObject {
     func cancel(at date: Date = Date()) {
         snapshot = TimerEngine.cancel(snapshot, at: date)
         currentDate = date
+        pawsCrossedThisSession = 0
         updateTicker()
         updateProcessActivity()
         save()
@@ -103,6 +152,8 @@ final class FocusTimerStore: ObservableObject {
         snapshot = FocusTimerSnapshot(duration: duration)
         currentDate = Date()
         activeTaskID = nil
+        activeTaskTitle = "Quick focus"
+        pawsCrossedThisSession = 0
         updateTicker()
         updateProcessActivity()
         save()
@@ -148,8 +199,24 @@ final class FocusTimerStore: ObservableObject {
                 Task { @MainActor in
                     self?.currentDate = date
                     self?.refreshCompletion(at: date)
+                    self?.evaluatePawBoundary(at: date)
                 }
             }
+    }
+
+    /// Per-second hook — checks whether the credited duration has crossed a
+    /// new 5-minute boundary since the last tick. When it does, increments
+    /// `pawsCrossedThisSession` and publishes the new count on
+    /// `pawBoundaryDidCross` so the focus screen can animate a "+1" drifter
+    /// and pulse the ring. Idempotent — only fires once per crossing.
+    private func evaluatePawBoundary(at date: Date) {
+        guard snapshot.state == .running else { return }
+        let credited = TimerEngine.creditedDuration(for: snapshot, at: date)
+        let boundary = Int((credited / Self.pawBoundarySeconds).rounded(.down))
+        if boundary > pawsCrossedThisSession {
+            pawsCrossedThisSession = boundary
+            pawBoundaryDidCross.send(boundary)
+        }
     }
 
     private func updateProcessActivity() {

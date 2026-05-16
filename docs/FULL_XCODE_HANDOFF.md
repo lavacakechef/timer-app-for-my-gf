@@ -11,11 +11,11 @@ Full Xcode is installed and selected. Xcode build, XCTest, XCUITest, SwiftData m
 
 ## Current Verification
 
-- `swift test`: passes 24 SwiftPM domain tests.
+- `swift test`: passes 26 SwiftPM domain tests.
 - `xcodebuild -project CozyTime.xcodeproj -scheme CozyTime -destination 'platform=macOS' build`: passes.
 - `scripts/run_xcode_release_gate.sh`: passes the full Release test plan on this machine.
-- Release gate coverage: 40 Xcode unit tests and 4 XCUITests.
-- UI-test coverage currently exercises first launch, quick add, focus start/pause/stop, countdown creation, habit creation/toggle, settings edit, focus reward claim, shop, stats, calendar diary, reflection persistence, and accessibility audit smoke coverage.
+- Release gate coverage: 49 Xcode unit tests and 4 XCUITests.
+- UI-test coverage currently exercises first launch, first-session task creation, focus start/pause/stop, countdown creation, habit creation/toggle, settings edit, focus reward claim, shop, stats, calendar diary, reflection persistence, and accessibility audit smoke coverage.
 - `scripts/package_xcode_unsigned.sh`: runs the release gate by default, archives the app, verifies codesign, and creates `.build/xcode/CozyTime-unsigned-xcode.zip`.
 - Packaged app smoke verification: archived app launches and renders the main CozyTime window.
 

@@ -42,7 +42,7 @@ final class ProgressionTests: XCTestCase {
         let summary = CozyProgression.summary(for: database)
 
         XCTAssertFalse(CozyProgression.canPurchase(item, database: database))
-        XCTAssertEqual(summary.coinsAvailable, 56)
+        XCTAssertEqual(summary.coinsAvailable, 52)
     }
 
     func testStarterTimerSkinDoesNotCreateHiddenShopDebt() {
@@ -115,7 +115,7 @@ final class ProgressionTests: XCTestCase {
 
         XCTAssertNil(duplicateRoll.reward)
         XCTAssertEqual(duplicateRoll.rarity, .cozy)
-        XCTAssertEqual(duplicateRoll.duplicatePaws, 3)
+        XCTAssertEqual(duplicateRoll.duplicatePaws, 1)
     }
 
     func testShopCatalogIncludesTimerCosmeticsAsCosmeticCoinSinks() {

@@ -30,4 +30,21 @@ final class NotificationPlannerTests: XCTestCase {
         XCTAssertEqual(draft.identifier, "countdown-11111111-2222-3333-4444-555555555555-3")
         XCTAssertEqual(draft.fireDate, calendar.date(byAdding: .day, value: -3, to: target))
     }
+
+    func testFocusCompletionIsMarkedTimeSensitive() {
+        let draft = NotificationPlanner.focusCompletion(
+            sessionID: UUID(),
+            taskTitle: "Write outline",
+            startDate: Date(),
+            duration: 25 * 60
+        )
+        XCTAssertTrue(draft.isTimeSensitive, "Focus completion must break through Focus filters")
+    }
+
+    func testCountdownMilestoneIsNotTimeSensitive() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let target = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let draft = try XCTUnwrap(NotificationPlanner.countdownMilestone(eventID: UUID(), title: "Trip", targetDate: target, daysBefore: 3, calendar: calendar))
+        XCTAssertFalse(draft.isTimeSensitive, "Countdown reminders should not override Do Not Disturb")
+    }
 }

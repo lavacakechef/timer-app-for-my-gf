@@ -14,6 +14,8 @@ if [[ ! -d CozyTime.xcodeproj ]]; then
   scripts/generate_xcode_project.sh
 fi
 
+scripts/lint_design.sh
+
 xcodebuild \
   -project CozyTime.xcodeproj \
   -scheme CozyTime \

@@ -200,14 +200,79 @@ enum CozySwiftDataSchema {
 
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
         let schema = Schema(models)
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
+        if inMemory {
+            let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            return try ModelContainer(for: schema, configurations: [configuration])
+        }
+        let storeURL = try Self.defaultStoreURL()
+        try Self.migrateLegacyDefaultStoreIfNeeded(to: storeURL)
+        let configuration = ModelConfiguration(schema: schema, url: storeURL)
         return try ModelContainer(for: schema, configurations: [configuration])
+    }
+
+    /// Explicit on-disk location for the SwiftData store. Lives inside
+    /// `~/Library/Application Support/CozyTime/` so the app's persisted data
+    /// is grouped under one folder (matches CLAUDE.md / IMPLEMENTATION_NOTES).
+    static func defaultStoreURL(fileManager: FileManager = .default) throws -> URL {
+        let baseURL = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let folder = baseURL.appendingPathComponent("CozyTime", isDirectory: true)
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent("CozyTime.store")
+    }
+
+    /// B7: move the on-disk SwiftData trio (.store / .store-wal / .store-shm)
+    /// aside with a unique suffix so the container can try a clean rebuild.
+    /// Used when persistent open fails — preserves the corrupt data for
+    /// recovery instead of overwriting it.
+    static func movePersistentStoreAside(suffix: String, fileManager: FileManager = .default) {
+        guard let storeURL = try? defaultStoreURL(fileManager: fileManager) else { return }
+        let base = storeURL.deletingPathExtension()
+        for ext in ["store", "store-wal", "store-shm"] {
+            let from = base.appendingPathExtension(ext)
+            guard fileManager.fileExists(atPath: from.path) else { continue }
+            let to = base.appendingPathExtension("\(ext).\(suffix)")
+            try? fileManager.moveItem(at: from, to: to)
+        }
+    }
+
+    /// SwiftData used to default to `~/Library/Application Support/default.store`
+    /// when no URL was supplied. Move the trio (.store / .store-wal / .store-shm)
+    /// into the CozyTime folder on first run so users who launched older builds
+    /// keep their data.
+    private static func migrateLegacyDefaultStoreIfNeeded(to newURL: URL) throws {
+        let fileManager = FileManager.default
+        let baseURL = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        )
+        let legacyStore = baseURL.appendingPathComponent("default.store")
+        guard fileManager.fileExists(atPath: legacyStore.path),
+              !fileManager.fileExists(atPath: newURL.path) else {
+            return
+        }
+        for suffix in ["", "-wal", "-shm"] {
+            let legacy = baseURL.appendingPathComponent("default.store\(suffix)")
+            guard fileManager.fileExists(atPath: legacy.path) else { continue }
+            let destination = suffix.isEmpty
+                ? newURL
+                : newURL.deletingPathExtension().appendingPathExtension("store\(suffix)")
+            try? fileManager.moveItem(at: legacy, to: destination)
+        }
     }
 }
 
 @MainActor
 final class AppDataStore: ObservableObject {
     @Published private(set) var database = CozyDatabase()
+    @Published private(set) var lastSaveError: String?
+    @Published private(set) var containerFailureMessage: String?
 
     private let container: ModelContainer
     private let legacyJSONURL: URL
@@ -218,15 +283,34 @@ final class AppDataStore: ObservableObject {
         fileManager: FileManager = .default
     ) {
         let isUITesting = ProcessInfo.processInfo.arguments.contains("-ui-testing")
-        do {
-            if let container {
-                self.container = container
-            } else {
-                self.container = try CozySwiftDataSchema.makeContainer(inMemory: isUITesting)
+        var failureMessage: String? = nil
+        let resolvedContainer: ModelContainer
+        if let container {
+            resolvedContainer = container
+        } else {
+            do {
+                resolvedContainer = try CozySwiftDataSchema.makeContainer(inMemory: isUITesting)
+            } catch {
+                // B7: persistent open failed (corruption / schema mismatch).
+                // Before falling back to in-memory, try to preserve the broken
+                // store under a `.corrupted-<timestamp>` suffix and retry once
+                // with a fresh persistent store. Only on second failure do we
+                // drop to in-memory; fatalError remains a last resort.
+                let backupSuffix = "corrupted-\(Int(Date().timeIntervalSince1970))"
+                CozySwiftDataSchema.movePersistentStoreAside(suffix: backupSuffix, fileManager: fileManager)
+                if let retried = try? CozySwiftDataSchema.makeContainer(inMemory: isUITesting) {
+                    resolvedContainer = retried
+                    failureMessage = "CozyTime couldn't open last session's data, so we started fresh. Older data is preserved as `.\(backupSuffix)` in Application Support."
+                } else if let memoryFallback = try? CozySwiftDataSchema.makeContainer(inMemory: true) {
+                    resolvedContainer = memoryFallback
+                    failureMessage = "Saved data couldn't be opened. CozyTime is running in memory for now — please quit and relaunch, or contact the developer."
+                } else {
+                    fatalError("CozyTime cannot create a SwiftData container: \(error)")
+                }
             }
-        } catch {
-            fatalError("Could not create SwiftData container: \(error)")
         }
+        self.container = resolvedContainer
+        self.containerFailureMessage = failureMessage
 
         self.legacyJSONURL = legacyJSONURL ?? Self.defaultLegacyJSONURL(fileManager: fileManager, isUITesting: isUITesting)
 
@@ -286,7 +370,7 @@ final class AppDataStore: ObservableObject {
     func completeTask(title: String, at date: Date = Date()) {
         let descriptor = FetchDescriptor<StoredTaskItem>(
             predicate: #Predicate { $0.title == title && $0.completedAt == nil },
-            sortBy: [SortDescriptor(\.createdAt)]
+            sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]
         )
         guard let task = try? container.mainContext.fetch(descriptor).first else { return }
         task.completedAt = date
@@ -433,7 +517,12 @@ final class AppDataStore: ObservableObject {
         do {
             try container.mainContext.save()
             try reload()
+            if lastSaveError != nil {
+                lastSaveError = nil
+            }
         } catch {
+            lastSaveError = "CozyTime couldn't save just now. Your last edit was rolled back."
+            container.mainContext.rollback()
             try? reload()
         }
     }
@@ -474,6 +563,9 @@ final class AppDataStore: ObservableObject {
 
     @discardableResult
     private func insertRewardIfNeeded(_ reward: RewardItem) -> Bool {
+        if database.rewards.contains(where: { $0.name == reward.name && $0.category == reward.category }) {
+            return false
+        }
         let rewardName = reward.name
         let rewardCategory = reward.category
         let descriptor = FetchDescriptor<StoredRewardItem>(
@@ -529,6 +621,10 @@ enum CozyJSONToSwiftDataMigrator {
         database.habits.forEach { context.insert(StoredHabit(from: $0)) }
         database.rewards.forEach { context.insert(StoredRewardItem(from: $0)) }
         try context.save()
+
+        let migratedURL = legacyJSONURL.appendingPathExtension("migrated")
+        try? FileManager.default.removeItem(at: migratedURL)
+        try? FileManager.default.moveItem(at: legacyJSONURL, to: migratedURL)
     }
 }
 

@@ -12,6 +12,29 @@ final class FocusTimerStoreTests: XCTestCase {
         XCTAssertEqual(store.menuBarTitle(), "CozyTime")
     }
 
+    func testRememberedFocusMinutesDefaultsToTwentyFiveBeforeAnySelection() {
+        let defaults = makeDefaults()
+
+        XCTAssertEqual(FocusDefaults.rememberedFocusMinutes(in: defaults), 25)
+        defaults.set(0, forKey: FocusDefaults.lastFocusMinutesKey)
+        XCTAssertEqual(FocusDefaults.rememberedFocusMinutes(in: defaults), 25)
+        defaults.set(1, forKey: FocusDefaults.lastFocusMinutesKey)
+        XCTAssertEqual(FocusDefaults.rememberedFocusMinutes(in: defaults), 1)
+        defaults.set(50, forKey: FocusDefaults.lastFocusMinutesKey)
+        XCTAssertEqual(FocusDefaults.rememberedFocusMinutes(in: defaults), 50)
+    }
+
+    func testRememberedQuickFocusStartUsesStoredDuration() {
+        let defaults = makeDefaults()
+        defaults.set(50, forKey: FocusDefaults.lastFocusMinutesKey)
+        let store = FocusTimerStore(defaults: makeDefaults())
+
+        store.startRememberedQuickFocus(defaults: defaults, at: Date(timeIntervalSinceReferenceDate: 11_000))
+
+        XCTAssertEqual(store.snapshot.duration, 50 * 60)
+        XCTAssertEqual(store.activeTaskTitle, "Quick focus")
+    }
+
     func testMenuBarTitleShowsRemainingTimerWhileRunning() {
         let defaults = makeDefaults()
         let store = FocusTimerStore(defaults: defaults)
@@ -61,6 +84,20 @@ final class FocusTimerStoreTests: XCTestCase {
         XCTAssertNil(restored.activeTaskID)
     }
 
+    func testResetClearsActiveTaskTitleSoMenuBarDoesNotShowStaleSession() {
+        let store = FocusTimerStore(defaults: makeDefaults())
+        let start = Date(timeIntervalSinceReferenceDate: 70_000)
+
+        store.start(taskTitle: "Sketch plan", duration: 5 * 60, at: start)
+        store.complete(at: start.addingTimeInterval(5 * 60))
+        XCTAssertEqual(store.activeTaskTitle, "Sketch plan")
+
+        store.reset()
+
+        XCTAssertEqual(store.activeTaskTitle, "Quick focus", "reset() must clear the previous session's title so the menu bar reverts to the idle name")
+        XCTAssertNil(store.activeTaskID)
+    }
+
     func testStartDoesNotOverwriteActiveSession() {
         let store = FocusTimerStore(defaults: makeDefaults())
         let start = Date(timeIntervalSinceReferenceDate: 40_000)
@@ -104,7 +141,7 @@ final class FocusTimerStoreTests: XCTestCase {
         XCTAssertEqual(result.minutes, 5)
         XCTAssertEqual(result.xp, 10)
         XCTAssertEqual(result.rewardPaws, 2)
-        XCTAssertEqual(result.totalPaws, 4)
+        XCTAssertEqual(result.totalPaws, 3)
         XCTAssertEqual(result.session.taskTitle, "Study")
         XCTAssertEqual(result.session.rewardPoints, 2)
         XCTAssertEqual(result.adventureRoll?.rarity, .everyday)
@@ -163,8 +200,16 @@ final class FocusTimerStoreTests: XCTestCase {
     }
 
     func testTimerAndMascotPersonalizationCatalogsHaveStableDefaults() {
-        XCTAssertEqual(CozyMascotStyle.named(CozyMascotStyle.defaultID).title, "Maltese")
-        XCTAssertGreaterThanOrEqual(CozyMascotStyle.all.count, 3)
+        XCTAssertEqual(CozyMascotStyle.named(CozyMascotStyle.defaultID).title, "Mochi")
+        let mascotIDs = ["maltese", "biscuit", "tofu", "bao", "bramble", "pip", "yolk", "soba", "hazel", "acorn"]
+        XCTAssertEqual(CozyMascotStyle.all.map(\.id), mascotIDs)
+        XCTAssertEqual(CozyLottieMascot.lottiePrefix(forStyleID: "maltese"), "mochi")
+        XCTAssertEqual(CozyLottieMascot.lottiePrefix(forStyleID: "biscuit"), "biscuit")
+        for id in mascotIDs.dropFirst(2) {
+            XCTAssertEqual(CozyLottieMascot.lottiePrefix(forStyleID: id), id)
+        }
+        XCTAssertNil(CozyLottieMascot.lottiePrefix(forStyleID: "mango"))
+        XCTAssertNil(MascotView.firstMatchingAsset(styleID: "mango", state: .idle), "Retired style ids should not collapse to legacy generic mascot-idle art")
 
         XCTAssertEqual(CozyTimerSkin.named(CozyTimerSkin.defaultID).title, "Rose Ring")
         XCTAssertGreaterThanOrEqual(CozyTimerSkin.all.count, 5)

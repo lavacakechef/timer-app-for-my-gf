@@ -17,7 +17,7 @@
 - Today screen renders with the Mochi mascot, aligned cards, quick add, progress, countdown, and habit sections.
 - Today screen now includes the pet-first hero, daily cozy quests, visible paws/level state, and a desk-room preview.
 - Menu bar item appears with the paw/timer icon and active countdown text when a timer is running.
-- Release XCUITests passed on this machine for first launch, quick add, focus lifecycle, countdown creation, habit completion, settings persistence, reward claim, stats/calendar diary, reflection persistence, and an accessibility audit smoke test.
+- Release XCUITests passed on this machine for first launch, first-session task creation, focus lifecycle, countdown creation, habit completion, settings persistence, reward claim, stats/calendar diary, reflection persistence, and an accessibility audit smoke test.
 - Idle/energy profiling with Instruments is not yet proven for the current build.
 
 ## Remaining Local QA Before Handing To Friend
@@ -30,7 +30,7 @@
 ## Clean-Mac Gate
 
 - Download the ZIP from the real transfer location so quarantine is preserved.
-- Confirm Gatekeeper warning appears for unsigned build.
+- Confirm Gatekeeper warning appears for the private ad-hoc-signed, unnotarized build.
 - Confirm the documented manual override works.
 - Confirm relaunch works without new prompts.
 - Confirm local data persists after quit/relaunch.

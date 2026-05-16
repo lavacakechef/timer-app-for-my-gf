@@ -7,14 +7,17 @@ struct CozyCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Focus") {
-            Button("Start 25-Min Focus") {
-                timerStore.start(taskTitle: "Quick focus", duration: 25 * 60)
+            // Apple HIG: menu items use sentence case ("Start 25 min focus"), and a button
+            // describes what it does rather than how (replaced "End Focus Gently" → "Discard
+            // focus" so the user knows it doesn't save).
+            Button("Start \(CozyFormatters.durationLabel(TimeInterval(rememberedFocusMinutes * 60))) focus") {
+                timerStore.startRememberedQuickFocus()
                 scheduleFocusCompletion()
             }
             .keyboardShortcut("f", modifiers: [.command, .shift])
             .disabled(!timerStore.canStartNewSession)
 
-            Button(timerStore.isRunning ? "Pause Focus" : "Resume Focus") {
+            Button(timerStore.isRunning ? "Pause focus" : "Resume focus") {
                 if timerStore.isRunning {
                     timerStore.pause()
                     Task { await notifications.cancelFocusNotifications() }
@@ -26,8 +29,9 @@ struct CozyCommands: Commands {
             .keyboardShortcut("p", modifiers: [.command, .shift])
             .disabled(!timerStore.isActive)
 
-            Button("End Focus Gently") {
+            Button("Discard focus") {
                 timerStore.cancel()
+                timerStore.reset(duration: TimeInterval(rememberedFocusMinutes * 60))
                 Task { await notifications.cancelFocusNotifications() }
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
@@ -48,5 +52,9 @@ struct CozyCommands: Commands {
             await notifications.cancelFocusNotifications()
             await notifications.schedule(draft)
         }
+    }
+
+    private var rememberedFocusMinutes: Int {
+        FocusDefaults.rememberedFocusMinutes()
     }
 }

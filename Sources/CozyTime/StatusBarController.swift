@@ -70,9 +70,21 @@ final class StatusBarController: NSObject, ObservableObject {
     private func updateButton() {
         guard let button = statusItem?.button else { return }
         let hasTimerStatus = timerStore.isActive || timerStore.needsCompletionReview
-        let title = hasTimerStatus ? " \(shortMenuBarTaskTitle) \(timerStore.menuBarTitle(at: timerStore.currentDate))" : ""
+        // Compact title — just the timer (MM:SS), no task name. The task name
+        // goes to the tooltip. Previous implementation included the task name
+        // ("Sleep Focus 88:24") which on a 13" MBA with a notch + many system
+        // items would push CozyTime out of the visible menu bar entirely.
+        // macOS Sequoia silently hides overflow status items beyond the notch.
+        let title: String
+        if timerStore.needsCompletionReview {
+            title = " save"
+        } else if timerStore.isActive {
+            title = " \(timerStore.menuBarTitle(at: timerStore.currentDate))"
+        } else {
+            title = ""
+        }
         statusItem?.length = hasTimerStatus
-            ? min(220, max(96, CGFloat(title.count * 7 + 34)))
+            ? min(120, max(76, CGFloat(title.count * 7 + 30)))
             : NSStatusItem.squareLength
         button.title = title
         button.toolTip = timerStore.isActive
@@ -82,7 +94,7 @@ final class StatusBarController: NSObject, ObservableObject {
             : "CozyTime"
         button.setAccessibilityLabel(
             hasTimerStatus
-                ? "CozyTime timer \(timerStore.menuBarTitle(at: timerStore.currentDate))"
+                ? "CozyTime: \(timerStore.activeTaskTitle), \(timerStore.menuBarTitle(at: timerStore.currentDate))"
                 : "CozyTime"
         )
     }
@@ -129,7 +141,7 @@ final class StatusBarController: NSObject, ObservableObject {
             ? "Resume Timer"
             : timerStore.needsCompletionReview
             ? "Review Focus Reward"
-            : "Start 25m Focus"
+            : "Start \(CozyFormatters.durationLabel(TimeInterval(rememberedFocusMinutes * 60))) Focus"
         let primaryItem = NSMenuItem(title: primaryTitle, action: #selector(toggleTimerFromMenu), keyEquivalent: "")
         primaryItem.target = self
         menu.addItem(primaryItem)
@@ -163,7 +175,10 @@ final class StatusBarController: NSObject, ObservableObject {
             openSectionFromMenu(.focus)
         } else if timerStore.canStartNewSession {
             UserDefaults.standard.set(FocusBoost.default.id, forKey: "focus.activeBoostID")
-            timerStore.start(taskTitle: "Quick focus", duration: 25 * 60)
+            // Use the user's last-picked duration (persisted on every Focus
+            // start) instead of a hardcoded 25 minutes. Mirrors the parallel
+            // path in MenuBarPanelView.startMenuBarFocus.
+            timerStore.startRememberedQuickFocus()
             scheduleFocusCompletion()
         }
     }
@@ -204,6 +219,7 @@ final class StatusBarController: NSObject, ObservableObject {
             taskTitle: timerStore.activeTaskTitle,
             boost: boost,
             existingRewards: dataStore.rewards,
+            lifetimeSessionCount: dataStore.focusSessions.count,
             now: now
         )
         timerStore.complete(at: now)
@@ -223,5 +239,9 @@ final class StatusBarController: NSObject, ObservableObject {
 
     private func openSectionFromMenu(_ section: AppSection) {
         CozyAppDelegate.openSection(section)
+    }
+
+    private var rememberedFocusMinutes: Int {
+        FocusDefaults.rememberedFocusMinutes()
     }
 }

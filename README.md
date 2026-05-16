@@ -6,7 +6,7 @@ It includes tasks, countdowns, focus sessions, habits, stats, rewards, mascot cu
 
 ## Requirements
 
-- macOS 14+
+- macOS 15.0+
 - Full Xcode selected with `xcode-select`
 - XcodeGen only if regenerating `CozyTime.xcodeproj` from `project.yml`
 
@@ -34,7 +34,7 @@ Run the full Xcode release gate:
 scripts/run_xcode_release_gate.sh
 ```
 
-Build the private unsigned ZIP:
+Build the private ad-hoc-signed ZIP:
 
 ```bash
 scripts/package_xcode_unsigned.sh
@@ -48,6 +48,6 @@ The package script runs the release gate by default, then archives and writes:
 
 ## Distribution
 
-The current release path is private, ad-hoc signed, and unsigned/not notarized for public distribution. macOS can show a Gatekeeper warning on first launch. See `docs/INSTALL.md` for the manual trust flow.
+The current release path is private, ad-hoc signed, and unnotarized for public distribution. macOS can show a Gatekeeper warning on first launch. See `docs/INSTALL.md` for the manual trust flow.
 
 For a polished public-style install, use Apple Developer Program, Developer ID signing, hardened runtime, notarization, and a stapled DMG.

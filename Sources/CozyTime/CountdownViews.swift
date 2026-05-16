@@ -20,14 +20,16 @@ struct CountdownsView: View {
 
                 if dataStore.countdowns.isEmpty {
                     EmptyStateView(
-                        title: "No countdowns yet",
-                        message: "Add an exam, trip, birthday, or tiny release date.",
+                        title: "Pick a first day to look forward to",
+                        message: "An exam, a trip, a birthday, a tiny release date. Mochi nudges you the day before.",
                         mascotState: .countdown,
-                        actionTitle: "Create a 7-day countdown"
-                    ) {
-                        title = "First cozy countdown"
-                        addCountdown()
-                    }
+                        eyebrow: "Countdowns",
+                        primaryActionTitle: "Create a 7-day countdown",
+                        primaryAction: {
+                            title = "First cozy countdown"
+                            addCountdown()
+                        }
+                    )
                         .frame(minHeight: 280)
                 } else {
                     LazyVStack(spacing: CozyLayout.gridSpacing) {
@@ -44,28 +46,14 @@ struct CountdownsView: View {
 
     private var countdownComposer: some View {
         VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                    titleField
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                        datePicker
-                        reminderToggle
-                        addButton
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
-
-                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-                    titleField
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                        datePicker
-                        addButton
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                    reminderToggle
-                }
+            CozyResponsiveFormRow {
+                titleField
+            } trailing: {
+                datePicker
+                reminderToggle
+                addButton
+            } auxiliary: {
+                dateQuickChoicesRow
             }
             if let lastAddedCountdown {
                 countdownAddFeedback(event: lastAddedCountdown)
@@ -76,25 +64,34 @@ struct CountdownsView: View {
     }
 
     private var titleField: some View {
-        CozyLabeledControl(title: "Countdown", symbolName: "hourglass", minWidth: 260) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("Trip, exam, release...", text: $title)
-                    .onSubmit(addCountdown)
-                    .accessibilityIdentifier("countdown.title")
-                    .cozyTextInput(minWidth: 260, alignment: .leading)
-                if cleanTitle.isEmpty {
-                    CozyFieldHint(text: "Name the countdown first.")
-                }
-            }
+        CozyLabeledControl(
+            title: "Countdown",
+            symbolName: "hourglass",
+            minWidth: 260,
+            hint: cleanTitle.isEmpty ? "Name the countdown first." : nil
+        ) {
+            TextField("Trip, exam, release...", text: $title)
+                .onSubmit(addCountdown)
+                .accessibilityIdentifier("countdown.title")
+                .cozyTextInput(minWidth: 260, alignment: .leading)
         }
         .layoutPriority(1)
     }
 
     private var datePicker: some View {
         CozyLabeledControl(title: "Date", symbolName: "calendar") {
-            CozyDateInput(date: $targetDate)
+            CozyDateInput(date: $targetDate, label: "Countdown date", includeInlineQuickChoices: false)
                 .accessibilityIdentifier("countdown.date")
         }
+    }
+
+    /// Quick-pick chips ("Tomorrow / 7 days / 30 days") rendered as a full-width
+    /// row underneath the date + action columns. Previously these lived inside
+    /// the DATE column's vertical stack, which made the column taller than the
+    /// ACTION column and produced a visibly jagged form row.
+    private var dateQuickChoicesRow: some View {
+        CozyDateInput(date: $targetDate, label: "Countdown date", includeInlineQuickChoices: false).quickChoicesRow
+            .accessibilityIdentifier("countdown.date.quickPicks")
     }
 
     private var addButton: some View {
@@ -162,7 +159,7 @@ struct CountdownsView: View {
                 lastAddedCountdown = nil
                 CozyFeedback.play(.undo)
             }
-            .cozyGhostButton(minWidth: 64)
+            .cozyGhostButton(minWidth: 76)
             Button {
                 addPrepTask(for: event)
                 lastAddedCountdown = nil
@@ -229,6 +226,7 @@ struct CountdownCard: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var notifications: NotificationService
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDetails = false
     @State private var isConfirmingDelete = false
     @State private var isEditing = false
@@ -249,7 +247,7 @@ struct CountdownCard: View {
                 CountdownPhaseBadge(phase: phase, color: daysColor)
                 reminderStatus
                 Button {
-                    withAnimation(.snappy(duration: 0.18)) {
+                    withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                         syncDraft()
                         isEditing.toggle()
                         savedEditFeedback = false
@@ -257,20 +255,20 @@ struct CountdownCard: View {
                     }
                 } label: {
                     Image(systemName: isEditing ? "xmark" : "pencil")
-                        .frame(width: 22, height: 22)
+                        .frame(width: 24, height: 24)
                 }
                 .cozyIconButton(size: CozyLayout.hitSize)
                 .contentShape(Rectangle())
                 .help(isEditing ? "Close countdown edit" : "Edit countdown")
                 .accessibilityLabel(isEditing ? "Close countdown edit" : "Edit \(event.title)")
                 Button(role: .destructive) {
-                    withAnimation(.snappy(duration: 0.18)) {
+                    withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                         isConfirmingDelete.toggle()
                         isEditing = false
                     }
                 } label: {
                     Image(systemName: isConfirmingDelete ? "xmark" : "trash")
-                        .frame(width: 22, height: 22)
+                        .frame(width: 24, height: 24)
                 }
                 .cozyIconButton(size: CozyLayout.hitSize)
                 .contentShape(Rectangle())
@@ -319,7 +317,7 @@ struct CountdownCard: View {
                     .foregroundStyle(.secondary)
                     if !event.notes.isEmpty {
                         Text(event.notes)
-                            .font(.callout)
+                            .font(CozyType.body)
                     }
                 }
                 .padding(.top, 4)
@@ -338,8 +336,9 @@ struct CountdownCard: View {
     private var daysText: String {
         let days = event.daysRemaining()
         if days == 0 { return "Today" }
-        if days > 0 { return "\(days) days" }
-        return "\(abs(days)) days ago"
+        if days > 0 { return "\(days) \(days == 1 ? "day" : "days")" }
+        let abs = abs(days)
+        return "\(abs) \(abs == 1 ? "day" : "days") ago"
     }
 
     private var daysColor: Color {
@@ -353,11 +352,11 @@ struct CountdownCard: View {
                 .foregroundStyle(CozyPalette.overdue)
             Spacer()
             Button("Keep") {
-                withAnimation(.snappy(duration: 0.18)) {
+                withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                     isConfirmingDelete = false
                 }
             }
-            .cozyGhostButton(minWidth: 64)
+            .cozyGhostButton(minWidth: 76)
             Button(role: .destructive) {
                 deleteCountdown()
                 CozyFeedback.play(.delete)
@@ -367,7 +366,7 @@ struct CountdownCard: View {
             .cozyDestructiveButton(minWidth: 76)
             .accessibilityIdentifier("countdown.delete.confirm")
         }
-        .padding(10)
+        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(CozyPalette.overdue.opacity(0.08))
@@ -379,7 +378,7 @@ struct CountdownCard: View {
         Label(event.remindersEnabled ? "Alerts on" : "Visual only", systemImage: event.remindersEnabled ? "bell.badge.fill" : "eye.fill")
             .font(CozyType.captionStrong)
             .foregroundStyle(event.remindersEnabled ? CozyPalette.focusJade : .secondary)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .frame(height: 32)
             .background(
                 Capsule(style: .continuous)
@@ -390,25 +389,13 @@ struct CountdownCard: View {
 
     private var editPanel: some View {
         VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                    editTitleField
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                        editDateField
-                        editReminderToggle
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
-                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-                    editTitleField
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
-                        editDateField
-                        editReminderToggle
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
+            CozyResponsiveFormRow {
+                editTitleField
+            } trailing: {
+                editDateField
+                editReminderToggle
+            } auxiliary: {
+                editDateQuickChoicesRow
             }
             CozyLabeledControl(title: "Notes", symbolName: "note.text", minWidth: 260) {
                 TextField("Tiny prep note...", text: $draftNotes)
@@ -419,7 +406,7 @@ struct CountdownCard: View {
                 CozyFieldHint(text: editHelpText, isError: !canSaveEdit)
                 Spacer()
                 Button("Cancel") {
-                    withAnimation(.snappy(duration: 0.18)) {
+                    withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                         syncDraft()
                         isEditing = false
                     }
@@ -437,10 +424,10 @@ struct CountdownCard: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
                 .fill(CozyPalette.quietContainer(colorScheme))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
                         .stroke(CozyPalette.neutralBorder, lineWidth: 1)
                 )
         )
@@ -457,9 +444,14 @@ struct CountdownCard: View {
 
     private var editDateField: some View {
         CozyLabeledControl(title: "Date", symbolName: "calendar") {
-            CozyDateInput(date: $draftDate)
+            CozyDateInput(date: $draftDate, label: "Countdown date", includeInlineQuickChoices: false)
                 .accessibilityIdentifier("countdown.edit.date")
         }
+    }
+
+    private var editDateQuickChoicesRow: some View {
+        CozyDateInput(date: $draftDate, label: "Countdown date", includeInlineQuickChoices: false).quickChoicesRow
+            .accessibilityIdentifier("countdown.edit.date.quickPicks")
     }
 
     private var editReminderToggle: some View {
@@ -531,7 +523,7 @@ struct CountdownCard: View {
                 }
             }
         CozyFeedback.play(.complete)
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             isEditing = false
             savedEditFeedback = true
         }
@@ -567,6 +559,7 @@ struct CountdownCard: View {
 struct CountdownRecoveryActions: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var notifications: NotificationService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmingLetGo = false
     @State private var addedResetTaskID: UUID?
     let event: CountdownEvent
@@ -588,11 +581,11 @@ struct CountdownRecoveryActions: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Keep") {
-                        withAnimation(.snappy(duration: 0.18)) {
+                        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                             confirmingLetGo = false
                         }
                     }
-                    .cozyGhostButton(minWidth: 64)
+                    .cozyGhostButton(minWidth: 76)
                     Button(role: .destructive) {
                         let eventID = event.id
                         dataStore.deleteCountdown(id: eventID)
@@ -603,7 +596,7 @@ struct CountdownRecoveryActions: View {
                     }
                     .cozyDestructiveButton(minWidth: 76)
                 }
-                .padding(10)
+                .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(CozyPalette.overdue.opacity(0.08))
@@ -641,7 +634,7 @@ struct CountdownRecoveryActions: View {
         .disabled(addedResetTaskID != nil)
 
         Button(role: .destructive) {
-            withAnimation(.snappy(duration: 0.18)) {
+            withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                 confirmingLetGo.toggle()
             }
         } label: {
@@ -682,14 +675,14 @@ struct CountdownRecoveryActions: View {
     private func addResetTask() {
         let title = "Reset \(event.title)"
         if let existingID = existingTaskID(title: title, tag: "reset") {
-            withAnimation(.snappy(duration: 0.18)) {
+            withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                 addedResetTaskID = existingID
             }
             return
         }
         let task = TaskItem(title: title, dueDate: Date(), priority: 1, tagText: "reset", estimatedMinutes: 15)
         dataStore.addTask(task)
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             addedResetTaskID = task.id
         }
     }
@@ -716,22 +709,41 @@ struct CountdownCompactCard: View {
     var body: some View {
         let phase = event.phase()
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                CountdownStickerFrame(event: event, phase: phase)
-                    .frame(width: 54, height: 54)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(compactPhaseTitle(phase))
-                        .font(.caption.weight(.semibold))
+            // Tap the info row → jump to Countdowns. Previously the only clickable
+            // surface on this card was the secondary "Add prep task" button at the
+            // bottom, so users tapping the title/days-remaining went nowhere.
+            Button {
+                NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.countdowns.rawValue)
+            } label: {
+                HStack(spacing: 16) {
+                    CountdownStickerFrame(event: event, phase: phase)
+                        .frame(width: 54, height: 54)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(compactPhaseTitle(phase))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(event.title)
+                            .font(CozyType.rowTitle)
+                            .lineLimit(2)
+                        Text({
+                            let d = event.daysRemaining()
+                            if d == 0 { return "Today" }
+                            return "\(d) \(d == 1 ? "day" : "days") left"
+                        }())
+                            .font(CozyType.cardTitle)
+                            .foregroundStyle(countdownColor)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
-                    Text(event.title)
-                        .font(.headline)
-                        .lineLimit(2)
-                    Text(event.daysRemaining() == 0 ? "Today" : "\(event.daysRemaining()) days left")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(countdownColor)
                 }
-                Spacer()
+                .contentShape(Rectangle())
             }
+            .cozyPressable()
+            .accessibilityIdentifier("countdown.compact.open")
+            .help("Open Countdowns")
+
             Button {
                 addPrepTask()
             } label: {
@@ -744,7 +756,6 @@ struct CountdownCompactCard: View {
         }
         .compactDashboardTile()
         .cozyCard()
-        .cozyPressable()
         .onAppear(perform: syncExistingPrepTask)
     }
 
@@ -801,10 +812,10 @@ struct CountdownStickerFrame: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
                 .fill(stickerFill.opacity(phase == .today ? 0.24 : 0.14))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
                         .stroke(stickerColor.opacity(phase == .today ? 0.62 : 0.30), lineWidth: 1)
                 )
             Image(systemName: event.stickerName)
@@ -829,12 +840,7 @@ struct CountdownPhaseBadge: View {
     let color: Color
 
     var body: some View {
-        Text(phase.label)
-            .font(.caption.weight(.bold))
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(color.opacity(0.16)))
-            .foregroundStyle(color)
+        CozyPill(title: phase.label, intent: .accent(color), size: .regular)
     }
 }
 
@@ -845,13 +851,30 @@ struct CountdownMilestoneRail: View {
     private let milestones = [30, 14, 7, 3, 1, 0]
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(milestones, id: \.self) { milestone in
-                let reached = days <= milestone && days >= 0
-                Image(systemName: reached ? "star.circle.fill" : "circle")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(reached ? color : .secondary.opacity(0.55))
-                    .accessibilityLabel(reached ? "\(milestone) day milestone reached" : "\(milestone) day milestone")
+        // Eyebrow above the chip row so the rail reads as a labeled
+        // checkpoint timeline, not a floating row of decorative dots.
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Milestones")
+                .font(CozyType.footnote)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ForEach(milestones, id: \.self) { milestone in
+                    let reached = days <= milestone && days >= 0
+                    Text(milestone == 0 ? "Day" : "\(milestone)d")
+                        .font(CozyType.captionStrong)
+                        .foregroundStyle(reached ? CozyPalette.surface : color.opacity(0.85))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(reached ? color : color.opacity(0.10))
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(color.opacity(reached ? 0 : 0.35), lineWidth: 1)
+                        )
+                        .accessibilityLabel(reached ? "\(milestone) day milestone reached" : "\(milestone) day milestone")
+                }
             }
         }
         .accessibilityIdentifier("countdown.milestones")
@@ -860,6 +883,7 @@ struct CountdownMilestoneRail: View {
 
 struct CountdownPrepPrompt: View {
     @EnvironmentObject private var dataStore: AppDataStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var addedTaskID: UUID?
     @State private var addedTaskWasCreatedHere = false
     let event: CountdownEvent
@@ -872,11 +896,11 @@ struct CountdownPrepPrompt: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "wand.and.stars")
-                .font(.title3.weight(.bold))
+                .font(CozyType.cardTitle)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(prepPrompt(for: event, phase: phase))
-                    .font(.callout.weight(.bold))
+                    .font(CozyType.controlStrong)
                     .lineLimit(2)
                 Text("Turn anticipation into one 15m prep block.")
                     .font(.caption.weight(.semibold))
@@ -893,7 +917,7 @@ struct CountdownPrepPrompt: View {
                 didAddTask ? undoPrepTask() : addPrepTask()
             } label: {
                 Image(systemName: didAddTask ? "arrow.uturn.backward" : "plus")
-                    .frame(width: 18, height: 18)
+                    .frame(width: 20, height: 20)
             }
             .cozyIconButton(size: CozyLayout.hitSize)
             .accessibilityLabel(didAddTask ? "Undo prep task for \(event.title)" : "Add prep task for \(event.title)")
@@ -909,7 +933,7 @@ struct CountdownPrepPrompt: View {
     private func addPrepTask() {
         let title = prepPrompt(for: event, phase: phase)
         if let existingID = existingTaskID(title: title, tag: "prep") {
-            withAnimation(.snappy(duration: 0.18)) {
+            withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
                 addedTaskID = existingID
                 addedTaskWasCreatedHere = false
             }
@@ -917,7 +941,7 @@ struct CountdownPrepPrompt: View {
         }
         let task = TaskItem(title: title, dueDate: Date(), priority: 1, tagText: "prep", estimatedMinutes: 15)
         dataStore.addTask(task)
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             addedTaskID = task.id
             addedTaskWasCreatedHere = true
         }
@@ -930,7 +954,7 @@ struct CountdownPrepPrompt: View {
         if shouldDeleteTask {
             dataStore.deleteTask(id: taskID)
         }
-        withAnimation(.snappy(duration: 0.18)) {
+        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             addedTaskID = nil
             addedTaskWasCreatedHere = false
         }
@@ -977,8 +1001,16 @@ struct CalendarPlannerView: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @State private var dayOffset = -7
     @State private var selectedDay: SelectedCalendarDay?
+    @State private var presentingCountdownComposer = false
 
-    private let weekColumns = Array(repeating: GridItem(.flexible(minimum: 118), spacing: 10), count: 7)
+    // Lowered minimum 118→96 + spacing 10→8 so the 7-column week layout
+    // actually fits at typical window widths instead of falling back to the
+    // 4-column adaptive grid (which read as a broken calendar).
+    private let weekColumns = Array(repeating: GridItem(.flexible(minimum: 96), spacing: 8), count: 7)
+
+    private var allCountdowns: [CountdownEvent] {
+        dataStore.countdowns.sorted { $0.targetDate < $1.targetDate }
+    }
 
     var body: some View {
         ScrollView {
@@ -993,14 +1025,63 @@ struct CalendarPlannerView: View {
                         calendarCards
                     }
                 }
+                // Countdowns now live on the Calendar screen (per gf-requested
+                // sidebar consolidation). Inline list + "New countdown" button
+                // replaces the standalone Countdowns sidebar section.
+                countdownSection
             }
             .cozyPageFrame()
         }
         .sheet(item: $selectedDay) { selection in
+            // CalendarDayDetailSheet already has its own "Done" button in the
+            // header; adding an overlay X would collide with it (user reported
+            // exactly this overlap). Escape-key dismissal still works through
+            // the @Environment(.dismiss) in the sheet itself.
             CalendarDayDetailSheet(date: selection.date)
                 .environmentObject(dataStore)
         }
+        .sheet(isPresented: $presentingCountdownComposer) {
+            CountdownsView()
+                .environmentObject(dataStore)
+                .frame(minWidth: 640, idealWidth: 720, minHeight: 540, idealHeight: 640)
+                .modifier(CozySheetDismissAffordance { presentingCountdownComposer = false })
+        }
         .accessibilityIdentifier("screen.calendar")
+    }
+
+    @ViewBuilder
+    private var countdownSection: some View {
+        VStack(alignment: .leading, spacing: CozyLayout.gridSpacing) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Countdowns")
+                    .font(CozyType.cardTitle)
+                Spacer()
+                Button {
+                    presentingCountdownComposer = true
+                } label: {
+                    Label("New countdown", systemImage: "plus")
+                }
+                .cozySecondaryButton(minWidth: 156)
+                .accessibilityIdentifier("calendar.newCountdown")
+            }
+            if allCountdowns.isEmpty {
+                EmptyStateView(
+                    title: "Pick a first day to look forward to",
+                    message: "An exam, trip, birthday, or release date — Mochi nudges you the day before.",
+                    mascotState: .countdown,
+                    eyebrow: "Countdowns",
+                    primaryActionTitle: "Add a countdown",
+                    primaryAction: { presentingCountdownComposer = true }
+                )
+                .frame(minHeight: 200)
+            } else {
+                LazyVStack(spacing: CozyLayout.gridSpacing) {
+                    ForEach(allCountdowns) { event in
+                        CountdownCard(event: event)
+                    }
+                }
+            }
+        }
     }
 
     private var calendarControls: some View {
@@ -1094,6 +1175,17 @@ struct CalendarDayCard: View {
     let focusSessions: [FocusSession]
     let onOpen: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
+
+    private var theme: CozyTheme {
+        CozyTheme.named(selectedTheme)
+    }
+
+    private var isToday: Bool {
+        Calendar.autoupdatingCurrent.isDateInToday(date)
+    }
+
     private var visibleTasks: [TaskItem] {
         Array(tasks.prefix(1))
     }
@@ -1138,17 +1230,11 @@ struct CalendarDayCard: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text("\(Calendar.autoupdatingCurrent.component(.day, from: date))")
-                        .font(.title2.weight(.bold))
+                        .font(CozyType.cardTitle)
                 }
                 Spacer(minLength: 6)
                 if focusMinutes > 0 {
-                    Text("\(focusMinutes)m")
-                        .font(.caption.weight(.bold))
-                        .monospacedDigit()
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(CozyPalette.focusJade.opacity(0.12)))
-                        .foregroundStyle(CozyPalette.focusJade)
+                    CozyPill(title: "\(focusMinutes)m", intent: .success, size: .small)
                 }
             }
 
@@ -1189,6 +1275,11 @@ struct CalendarDayCard: View {
         }
         .frame(minHeight: 162, alignment: .topLeading)
         .cozyCard()
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isToday ? theme.accent : Color.clear, lineWidth: 2)
+        )
+        .accessibilityAddTraits(isToday ? .isSelected : [])
     }
 }
 
@@ -1305,9 +1396,9 @@ private struct CalendarDetailRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.callout.weight(.bold))
+                .font(CozyType.controlStrong)
                 .foregroundStyle(color)
-                .frame(width: 22)
+                .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(CozyType.controlStrong)
@@ -1319,7 +1410,7 @@ private struct CalendarDetailRow: View {
             }
             Spacer()
         }
-        .padding(10)
+        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(color.opacity(0.08))
@@ -1339,7 +1430,7 @@ private struct CalendarDayLine: View {
         } icon: {
             Image(systemName: symbol)
                 .font(.caption2.weight(.bold))
-                .frame(width: 14, alignment: .center)
+                .frame(width: 16, alignment: .center)
         }
         .font(.caption)
         .foregroundStyle(color)
