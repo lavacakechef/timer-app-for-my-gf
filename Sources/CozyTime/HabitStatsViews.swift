@@ -45,7 +45,7 @@ struct HabitsView: View {
                     )
                         .frame(minHeight: 280)
                 } else {
-                    LazyVGrid(columns: CozyLayout.twoColumnCards, spacing: CozyLayout.gridSpacing) {
+                    LazyVStack(spacing: CozyLayout.gridSpacing) {
                         ForEach(dataStore.habits.sorted { $0.createdAt < $1.createdAt }) { habit in
                             HabitCard(habit: habit)
                         }
