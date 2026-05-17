@@ -304,6 +304,14 @@ enum CozyPalette {
     static let wasabi = Color(hex: "#D9F06A")
     static let wasabiText = Color(hex: "#5F7114")
     static let overdue = Color(hex: "#B75239")
+    static let confettiPop: [Color] = [
+        stickerPink,
+        lavenderMist,
+        mistBlue,
+        wasabi,
+        peach,
+        softMint
+    ]
     static let darkCanvas = Color(hex: "#151218")
     static let darkSurface = Color(hex: "#26212B")
     static let darkRaised = Color(hex: "#312936")
@@ -1775,6 +1783,10 @@ private struct CozyDurationSliderControl: View {
         }
         .animation(nil, value: sliderPosition)
         .onAppear { sliderPosition = Double(committedMinutes) }
+        .onChange(of: liveMinutes) { _, newValue in
+            guard isDraggingSlider, newValue != committedMinutes else { return }
+            onCommit(newValue)
+        }
         .onChange(of: committedMinutes) { _, newValue in
             if !isDraggingSlider && Int(sliderPosition.rounded()) != newValue {
                 sliderPosition = Double(newValue)
@@ -2364,9 +2376,9 @@ struct MascotView: View {
             // flagging. The mascot now sits cleanly against the host card.
 
             mascotBody(moment: moment)
-                .animation(.easeInOut(duration: 0.22), value: state)
+                .animation(CozyMotion.gentle(reduceMotion, duration: 0.22), value: state)
                 .scaleEffect(state == .complete && !reduceMotion && !reducedDecoration ? 1.08 : 1)
-                .animation(.spring(response: 0.35, dampingFraction: 0.55), value: state == .complete)
+                .animation(CozyMotion.spring(reduceMotion || reducedDecoration, response: 0.35, damping: 0.55), value: state == .complete)
                 // Polish pass — flattens layers via compositingGroup then
                 // applies Refactoring-UI two-shadow elevation (crisp + soft)
                 // plus a top-of-head plush gloss radial gradient. Adds depth

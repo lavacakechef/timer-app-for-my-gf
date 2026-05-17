@@ -47,6 +47,9 @@ The package script runs the release gate by default, then archives and writes:
 /Users/zinklee/Desktop/CozyTime-for-friend.zip
 ```
 
+Set `COZYTIME_FRIEND_ZIP_PATH=/Users/zinklee/Desktop/CozyTime.zip` when you want
+the friend handoff file to use the shorter Desktop name.
+
 ## Distribution
 
 The current release path is private, ad-hoc signed, and unnotarized for public distribution. macOS can show a Gatekeeper warning on first launch. See `docs/INSTALL.md` for the manual trust flow.

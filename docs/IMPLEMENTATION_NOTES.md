@@ -4,16 +4,20 @@
 
 This workspace now builds CozyTime through full Xcode and still keeps the SwiftPM path as a fallback for fast domain checks.
 
-Verified on 2026-05-16 with Xcode 26.5 (build 17F42):
+Verified on 2026-05-17 with Xcode 26.5 (build 17F42):
 
 - `scripts/lint_design.sh`: passes the lintable UI/design rules in `docs/DESIGN_RULES.md`.
 - `swift build`: passes the SwiftPM app build.
-- `swift test`: passes 26 SwiftPM domain tests.
-- `scripts/run_xcode_release_gate.sh`: runs design lint first, then passes the full Release test plan, including 49 Xcode unit tests and 4 XCUITests.
-- XCUITest flow coverage includes first launch, first-session task creation, focus start/pause/stop, countdown creation, habit creation/toggle, settings edit, reward claim, shop, stats, calendar diary, reflection persistence, and accessibility audit smoke coverage.
-- `scripts/package_xcode_unsigned.sh`: runs the release gate by default, creates the Xcode archive, verifies codesign, omits AppleDouble sidecar files from the ZIP, and writes the private ad-hoc-signed ZIP.
-- Packaged artifact copied for handoff: `/Users/zinklee/Desktop/CozyTime-for-friend.zip`.
-- `spctl --assess --type execute` rejects the archived app, which is expected for this private ad-hoc-signed build and is covered by `docs/INSTALL.md`.
+- `swift test`: passes 27 SwiftPM domain tests.
+- `xcodebuild -project CozyTime.xcodeproj -scheme CozyTime -destination 'platform=macOS' -testPlan Release -only-testing:CozyTimeTests test`: passes 52 Xcode unit and SwiftData migration tests.
+- `scripts/run_xcode_release_gate.sh`: still runs design lint first, but the full Release test plan is not green yet. The latest post-fix targeted UI rerun failed before executing tests because `CozyTimeUITests-Runner` timed out while enabling automation mode.
+- Intended XCUITest flow coverage includes first launch, first-session task creation, focus start/pause/stop, countdown creation, compact/wide countdown composer layout, habit creation/toggle, settings edit, reward claim, shop, stats, calendar diary, reflection persistence, and accessibility audit smoke coverage.
+- `COZYTIME_SKIP_RELEASE_GATE=1 COZYTIME_FRIEND_ZIP_PATH="$HOME/Desktop/CozyTime.zip" scripts/package_xcode_unsigned.sh`: creates the Xcode archive, verifies codesign, omits AppleDouble sidecar files from the ZIP, and writes the private ad-hoc-signed ZIP while the UI-test runner blocker is unresolved.
+- Packaged artifact copied for handoff: `/Users/zinklee/Desktop/CozyTime.zip`.
+- Current Desktop ZIP SHA-256: `c947efc3a45577779f15e2a32c3838dda82fb6e333e7626c5e6cb644ec5a98f4`.
+- `spctl --assess --type execute` rejects the archived app with exit 3, which is expected for this private ad-hoc-signed build and is covered by `docs/INSTALL.md`.
+- The archived app launch-smoke test stayed running for 6 seconds and quit cleanly.
+- `/Applications` install smoke, Instruments profiling, and clean-user Downloads/Gatekeeper install still need to be re-run for v0.2.1 before calling it fully release-gated.
 
 The production app target uses SwiftData as the primary local store. The app is **not** sandboxed (`Packaging/CozyTime.entitlements` is empty by design), so data lives directly under `~/Library/Application Support/CozyTime/`. On first launch, if the SwiftData store is empty, it migrates once from the older JSON prototype store at:
 

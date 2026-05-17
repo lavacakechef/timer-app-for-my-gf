@@ -2,9 +2,15 @@ import AppKit
 import CozyCore
 import SwiftUI
 
+enum CountdownsPresentation {
+    case full
+    case composerOnly
+}
+
 struct CountdownsView: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @EnvironmentObject private var notifications: NotificationService
+    private let presentation: CountdownsPresentation
 
     @State private var title = ""
     @State private var targetDate = Calendar.autoupdatingCurrent.date(byAdding: .day, value: 7, to: Date()) ?? Date()
@@ -12,13 +18,41 @@ struct CountdownsView: View {
     @State private var lastAddedCountdown: CountdownEvent?
     @State private var lastAddedCountdownScheduledAlerts = 0
 
+    init(presentation: CountdownsPresentation = .full) {
+        self.presentation = presentation
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
-                SectionHeader(title: "Countdowns", subtitle: "Turn future moments into things to look forward to.", mascotState: .countdown)
+            content
+                .modifier(CountdownsContentFrame(presentation: presentation))
+        }
+        .accessibilityIdentifier(presentation == .full ? "screen.countdowns" : "countdown.composer")
+    }
 
-                countdownComposer
+    @ViewBuilder
+    private var content: some View {
+        VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
+            if presentation == .full {
+                SectionHeader(
+                    title: "Countdowns",
+                    subtitle: "Turn future moments into things to look forward to.",
+                    mascotState: .countdown
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("New countdown")
+                        .font(CozyType.heroCardTitle)
+                    Text("Name the moment, pick the date, then save it to Calendar.")
+                        .font(CozyType.body)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
+            countdownComposer
+
+            if presentation == .full {
                 if dataStore.countdowns.isEmpty {
                     EmptyStateView(
                         title: "Pick a first day to look forward to",
@@ -44,20 +78,30 @@ struct CountdownsView: View {
                     }
                 }
             }
-            .cozyPageFrame()
         }
-        .accessibilityIdentifier("screen.countdowns")
     }
 
     private var countdownComposer: some View {
         VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
             titleField
 
-            LazyVGrid(columns: countdownComposerColumns, alignment: .leading, spacing: CozyLayout.formRowSpacing) {
-                datePicker
-                reminderToggle
-                addButton
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                    datePicker
+                        .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+                    reminderToggle
+                        .frame(width: 220, alignment: .leading)
+                    addButton
+                        .frame(width: 156, alignment: .leading)
+                }
+
+                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+                    datePicker
+                    reminderToggle
+                    addButton
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             dateQuickChoicesRow
 
@@ -69,10 +113,18 @@ struct CountdownsView: View {
         .cozyCard()
     }
 
-    private var countdownComposerColumns: [GridItem] {
-        [
-            GridItem(.adaptive(minimum: 220), spacing: CozyLayout.formRowSpacing, alignment: .top)
-        ]
+    private struct CountdownsContentFrame: ViewModifier {
+        let presentation: CountdownsPresentation
+
+        func body(content: Content) -> some View {
+            if presentation == .full {
+                content.cozyPageFrame()
+            } else {
+                content
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     private var titleField: some View {
@@ -168,9 +220,15 @@ struct CountdownsView: View {
 
     private func countdownAddFeedback(event: CountdownEvent) -> some View {
         HStack(spacing: 8) {
-            Label(countdownAddFeedbackText(for: event), systemImage: countdownAddFeedbackSymbol(for: event))
-                .font(CozyType.captionStrong)
-                .foregroundStyle(event.remindersEnabled && lastAddedCountdownScheduledAlerts == 0 ? CozyPalette.persimmon : CozyPalette.focusJade)
+            VStack(alignment: .leading, spacing: 2) {
+                Label(countdownAddFeedbackText(for: event), systemImage: countdownAddFeedbackSymbol(for: event))
+                    .font(CozyType.captionStrong)
+                    .foregroundStyle(event.remindersEnabled && lastAddedCountdownScheduledAlerts == 0 ? CozyPalette.persimmon : CozyPalette.focusJade)
+                Text(event.title)
+                    .font(CozyType.captionStrong)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Spacer()
             Button("Undo") {
                 dataStore.deleteCountdown(id: event.id)
@@ -776,11 +834,7 @@ struct CountdownCompactCard: View {
                         Text(event.title)
                             .font(CozyType.rowTitle)
                             .lineLimit(2)
-                        Text({
-                            let d = event.daysRemaining()
-                            if d == 0 { return "Today" }
-                            return "\(d) \(d == 1 ? "day" : "days") left"
-                        }())
+                        Text(daysText)
                             .font(CozyType.cardTitle)
                             .foregroundStyle(countdownColor)
                     }
@@ -808,6 +862,16 @@ struct CountdownCompactCard: View {
         .compactDashboardTile()
         .cozyCard()
         .onAppear(perform: syncExistingPrepTask)
+    }
+
+    private var daysText: String {
+        let d = event.daysRemaining()
+        if d == 0 { return "Today" }
+        if d < 0 {
+            let overdue = abs(d)
+            return "\(overdue) \(overdue == 1 ? "day" : "days") ago"
+        }
+        return "\(d) \(d == 1 ? "day" : "days") left"
     }
 
     private var countdownColor: Color {
@@ -1092,7 +1156,7 @@ struct CalendarPlannerView: View {
                 .environmentObject(dataStore)
         }
         .sheet(isPresented: $presentingCountdownComposer) {
-            CountdownsView()
+            CountdownsView(presentation: .composerOnly)
                 .environmentObject(dataStore)
                 .frame(
                     minWidth: CozyLayout.sheetIdealWidthLarge,
@@ -1395,7 +1459,9 @@ struct CalendarDayDetailSheet: View {
                                 title: "\(session.completedMinutes)m \(session.taskTitle)",
                                 subtitle: session.moodNote.isEmpty ? "Saved focus session" : session.moodNote,
                                 symbol: "timer",
-                                color: CozyPalette.focusJade
+                                color: CozyPalette.focusJade,
+                                destination: .focus,
+                                navigate: openSection
                             )
                         }
                     }
@@ -1405,7 +1471,9 @@ struct CalendarDayDetailSheet: View {
                                 title: task.title,
                                 subtitle: task.isCompleted ? "Done" : "\(task.listName) · \(task.estimatedMinutes)m",
                                 symbol: task.isCompleted ? "checkmark.circle.fill" : "circle",
-                                color: task.isCompleted ? CozyPalette.focusJade : CozyPalette.berry
+                                color: task.isCompleted ? CozyPalette.focusJade : CozyPalette.berry,
+                                destination: .tasks,
+                                navigate: openSection
                             )
                         }
                     }
@@ -1415,7 +1483,9 @@ struct CalendarDayDetailSheet: View {
                                 title: event.title,
                                 subtitle: event.phase().label,
                                 symbol: event.stickerName,
-                                color: CozyCountdownColor.color(for: event)
+                                color: CozyCountdownColor.color(for: event),
+                                destination: .countdowns,
+                                navigate: openSection
                             )
                         }
                     }
@@ -1428,6 +1498,13 @@ struct CalendarDayDetailSheet: View {
 
     private var focusMinutes: Int {
         focusSessions.reduce(0) { $0 + $1.completedMinutes }
+    }
+
+    private func openSection(_ section: AppSection) {
+        dismiss()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .cozyOpenSection, object: section.rawValue)
+        }
     }
 
     @ViewBuilder
@@ -1459,8 +1536,41 @@ private struct CalendarDetailRow: View {
     let subtitle: String
     let symbol: String
     let color: Color
+    let destination: AppSection?
+    let navigate: (AppSection) -> Void
+
+    init(
+        title: String,
+        subtitle: String,
+        symbol: String,
+        color: Color,
+        destination: AppSection? = nil,
+        navigate: @escaping (AppSection) -> Void = { _ in }
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.symbol = symbol
+        self.color = color
+        self.destination = destination
+        self.navigate = navigate
+    }
 
     var body: some View {
+        Button {
+            if let destination {
+                navigate(destination)
+            }
+        } label: {
+            rowContent
+        }
+        .buttonStyle(.plain)
+        .cozyPressable()
+        .disabled(destination == nil)
+        .accessibilityIdentifier(destination.map { "calendar.detail.row.\($0.rawValue)" } ?? "calendar.detail.row")
+        .accessibilityHint(destination == nil ? "" : "Open \(destination?.title ?? "section")")
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
                 .font(CozyType.controlStrong)
@@ -1476,6 +1586,11 @@ private struct CalendarDetailRow: View {
                     .lineLimit(2)
             }
             Spacer()
+            if destination != nil {
+                Image(systemName: "chevron.right")
+                    .font(CozyType.captionStrong)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(12)
         .background(

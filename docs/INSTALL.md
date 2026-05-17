@@ -4,7 +4,7 @@ This is a private ad-hoc-signed macOS build. It requires **macOS 15.0 Sequoia or
 
 ## Install
 
-1. Download `CozyTime-for-friend.zip` from where it was sent to you. Save it to **Downloads** so macOS preserves the quarantine attribute (AirDrop works too).
+1. Download `CozyTime.zip` from where it was sent to you. Save it to **Downloads** so macOS preserves the quarantine attribute (AirDrop works too).
 2. Double-click the ZIP to unpack `CozyTime.app`.
 3. Drag `CozyTime.app` into `/Applications`.
 4. Double-click `CozyTime.app`. macOS will show a dialog: **"Apple cannot check it for malicious software"** (or similar). Click **Done** to dismiss.

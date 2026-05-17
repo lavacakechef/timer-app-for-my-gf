@@ -55,9 +55,9 @@ final class CozyTimeUITests: XCTestCase {
         let unlockWrap = app.descendants(matching: .any)["focus.unlockSheet.wrap"].firstMatch
         if unlockWrap.waitForExistence(timeout: 1.5) {
             unlockWrap.click()
-            let unlockDismiss = app.descendants(matching: .any)["focus.unlockSheet.dismiss"].firstMatch
-            if unlockDismiss.waitForExistence(timeout: 2) {
-                unlockDismiss.click()
+            let backToReview = app.descendants(matching: .any)["focus.unlockSheet.back"].firstMatch
+            if backToReview.waitForExistence(timeout: 2) {
+                backToReview.click()
             }
         }
 
@@ -79,7 +79,7 @@ final class CozyTimeUITests: XCTestCase {
 
         openSection("stats", in: app)
         XCTAssertTrue(app.staticTexts["5m"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Mochi level"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Mochi's level"].waitForExistence(timeout: 5))
 
         openSection("calendar", in: app)
         let savedDay = app.buttons.matching(identifier: "calendar.day.open")
@@ -89,6 +89,36 @@ final class CozyTimeUITests: XCTestCase {
         savedDay.click()
         XCTAssertTrue(app.staticTexts["Focus diary"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts[reflectionNote].waitForExistence(timeout: 5))
+        let focusDiaryRow = app.descendants(matching: .any)["calendar.detail.row.focus"].firstMatch
+        XCTAssertTrue(focusDiaryRow.waitForExistence(timeout: 5))
+        clickElement(focusDiaryRow)
+        XCTAssertTrue(app.descendants(matching: .any)["screen.focus"].firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testCountdownComposerLayoutAtCompactAndWideSizes() throws {
+        for windowSize in ["720x600", "1120x760"] {
+            let app = launchApp(extraArguments: ["-ui-testing-window-size", windowSize])
+            defer { app.terminate() }
+
+            openSection("calendar", in: app)
+            let newCountdown = app.buttons["calendar.newCountdown"]
+            XCTAssertTrue(newCountdown.waitForExistence(timeout: 5))
+            newCountdown.click()
+
+            let title = app.textFields["countdown.title"]
+            let date = app.descendants(matching: .any)["countdown.date"].firstMatch
+            let reminders = app.descendants(matching: .any)["countdown.reminders"].firstMatch
+            let add = app.buttons["countdown.add"].firstMatch
+
+            XCTAssertTrue(title.waitForExistence(timeout: 5))
+            XCTAssertTrue(date.waitForExistence(timeout: 5))
+            XCTAssertTrue(reminders.waitForExistence(timeout: 5))
+            XCTAssertTrue(add.waitForExistence(timeout: 5))
+            assertNoOverlap([date, reminders, add], context: "countdown composer \(windowSize)")
+
+            app.typeKey(.escape, modifierFlags: [])
+        }
     }
 
     @MainActor
@@ -120,7 +150,9 @@ final class CozyTimeUITests: XCTestCase {
         XCTAssertTrue(habitField.waitForExistence(timeout: 5))
         clickElement(habitField)
         habitField.typeText(habitTitle)
-        app.buttons["habit.add"].click()
+        let addHabitButton = app.buttons["habit.add"]
+        XCTAssertTrue(addHabitButton.waitForExistence(timeout: 5))
+        clickElement(addHabitButton)
         XCTAssertTrue(app.staticTexts[habitTitle].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons.matching(identifier: "habit.toggle").firstMatch.waitForExistence(timeout: 5))
         app.buttons.matching(identifier: "habit.toggle").firstMatch.click()
@@ -208,6 +240,26 @@ final class CozyTimeUITests: XCTestCase {
             element.click()
         } else {
             element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        }
+    }
+
+    @MainActor
+    private func assertNoOverlap(
+        _ elements: [XCUIElement],
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let frames = elements.map { $0.frame }
+        for leftIndex in frames.indices {
+            for rightIndex in frames.indices where rightIndex > leftIndex {
+                XCTAssertFalse(
+                    frames[leftIndex].intersects(frames[rightIndex]),
+                    "\(context): element \(leftIndex) overlaps element \(rightIndex). \(frames[leftIndex]) vs \(frames[rightIndex])",
+                    file: file,
+                    line: line
+                )
+            }
         }
     }
 }

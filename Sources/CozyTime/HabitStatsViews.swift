@@ -29,67 +29,7 @@ struct HabitsView: View {
                     mascotState: dataStore.habits.isEmpty ? .idle : .complete
                 )
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        TextField("New habit…", text: $newHabitTitle)
-                            .onSubmit(addHabit)
-                            .focused($focusedField, equals: .title)
-                            .font(CozyType.body)
-                            .cozyTextInput(minWidth: 160, alignment: .leading)
-                            .frame(maxWidth: .infinity)
-                            .accessibilityIdentifier("habit.title")
-
-                        HStack(spacing: 4) {
-                            Button {
-                                targetPerWeek = max(1, targetPerWeek - 1)
-                            } label: {
-                                Image(systemName: "minus")
-                                    .frame(width: 20, height: 20)
-                            }
-                            .cozyIconButton(size: CozyLayout.compactHitSize)
-                            .disabled(targetPerWeek <= 1)
-                            .accessibilityLabel("Decrease weekly goal")
-
-                            Text("\(targetPerWeek)/week")
-                                .font(CozyType.captionStrong)
-                                .monospacedDigit()
-                                .frame(minWidth: 56)
-
-                            Button {
-                                targetPerWeek = min(7, targetPerWeek + 1)
-                            } label: {
-                                Image(systemName: "plus")
-                                    .frame(width: 20, height: 20)
-                            }
-                            .cozyIconButton(size: CozyLayout.compactHitSize)
-                            .disabled(targetPerWeek >= 7)
-                            .accessibilityLabel("Increase weekly goal")
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(CozyPalette.quietContainer(colorScheme)))
-
-                        Button {
-                            addHabit()
-                        } label: {
-                            Label("Add Habit", systemImage: "plus")
-                        }
-                        .cozyPrimaryButton(minWidth: 120)
-                        .disabled(cleanHabitTitle.isEmpty)
-                        .help(cleanHabitTitle.isEmpty ? "Type a habit name first." : "Add this habit.")
-                        .accessibilityHint(cleanHabitTitle.isEmpty ? "Type a habit name first." : "Add this habit.")
-                        .accessibilityIdentifier("habit.add")
-                    }
-
-                    if cleanHabitTitle.isEmpty {
-                        Text("Give it a name first — anything gentle counts")
-                            .font(CozyType.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 4)
-                    }
-                }
-                .padding(CozyLayout.cardPadding)
-                .cozyCard()
+                habitComposer
 
                 if dataStore.habits.isEmpty {
                     EmptyStateView(
@@ -132,16 +72,116 @@ struct HabitsView: View {
     private var cleanHabitTitle: String {
         newHabitTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    private var habitComposer: some View {
+        VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                    habitTitleField
+                        .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+                    weeklyGoalControl
+                        .frame(width: 176, alignment: .leading)
+                    habitAddButton
+                        .frame(width: 156, alignment: .leading)
+                }
+
+                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+                    habitTitleField
+                    HStack(alignment: .top, spacing: CozyLayout.formRowSpacing) {
+                        weeklyGoalControl
+                            .frame(minWidth: 176, alignment: .leading)
+                        habitAddButton
+                            .frame(minWidth: 156, alignment: .leading)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: CozyLayout.formRowSpacing) {
+                    habitTitleField
+                    weeklyGoalControl
+                    habitAddButton
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(CozyLayout.cardPadding)
+        .cozyCard()
+    }
+
+    private var habitTitleField: some View {
+        CozyLabeledControl(
+            title: "Habit",
+            symbolName: "leaf",
+            minWidth: 220,
+            hint: cleanHabitTitle.isEmpty ? "Give it a name first — anything gentle counts" : nil
+        ) {
+            TextField("New habit...", text: $newHabitTitle)
+                .onSubmit(addHabit)
+                .focused($focusedField, equals: .title)
+                .font(CozyType.body)
+                .cozyTextInput(minWidth: 220, alignment: .leading)
+                .accessibilityIdentifier("habit.title")
+        }
+        .layoutPriority(1)
+    }
+
+    private var weeklyGoalControl: some View {
+        CozyLabeledControl(title: "Goal", symbolName: "calendar.badge.checkmark", minWidth: 176) {
+            HStack(spacing: 8) {
+                Button {
+                    targetPerWeek = max(1, targetPerWeek - 1)
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 20, height: 20)
+                }
+                .cozyIconButton(size: CozyLayout.compactHitSize)
+                .disabled(targetPerWeek <= 1)
+                .accessibilityLabel("Decrease weekly goal")
+
+                Text("\(targetPerWeek)/week")
+                    .font(CozyType.captionStrong)
+                    .monospacedDigit()
+                    .frame(minWidth: 62)
+
+                Button {
+                    targetPerWeek = min(7, targetPerWeek + 1)
+                } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 20, height: 20)
+                }
+                .cozyIconButton(size: CozyLayout.compactHitSize)
+                .disabled(targetPerWeek >= 7)
+                .accessibilityLabel("Increase weekly goal")
+            }
+            .cozyControlShell(minWidth: 176)
+        }
+    }
+
+    private var habitAddButton: some View {
+        CozyLabeledControl(title: "Action", symbolName: "plus.circle", minWidth: 156) {
+            Button {
+                addHabit()
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .cozyPrimaryButton(minWidth: 128, fullWidth: true)
+            .disabled(cleanHabitTitle.isEmpty)
+            .help(cleanHabitTitle.isEmpty ? "Type a habit name first." : "Add this habit.")
+            .accessibilityHint(cleanHabitTitle.isEmpty ? "Type a habit name first." : "Add this habit.")
+            .accessibilityIdentifier("habit.add")
+        }
+    }
 }
 
 struct HabitCard: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("hideStreaks") private var hideStreaks = false
+    @AppStorage("hasCheckedFirstHabit") private var hasCheckedFirstHabit = false
     let habit: Habit
     @State private var isConfirmingDelete = false
     @State private var habitFeedback: String?
     @State private var editingHabit: Habit?
+    @State private var showFirstHabitToast = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -159,7 +199,7 @@ struct HabitCard: View {
                         .lineLimit(2)
                         .layoutPriority(1)
                     Text("\(HabitMath.completionsInCurrentWeek(keys: habit.completionKeys, now: Date())) / \(habit.targetPerWeek) this week")
-                        .font(.caption)
+                        .font(CozyType.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -217,9 +257,9 @@ struct HabitCard: View {
                                     )
                                 if isDone {
                                     Image(systemName: "checkmark")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .symbolEffect(.bounce.down.byLayer, options: .nonRepeating, value: isDone)
+                                        .font(CozyType.badge)
+                                        .foregroundStyle(CozyPalette.surface)
+                                        .symbolEffect(.bounce.down.byLayer, options: .nonRepeating, value: reduceMotion ? false : isDone)
                                 }
                             }
                             .frame(width: 28, height: 28)
@@ -293,6 +333,14 @@ struct HabitCard: View {
             }
         }
         .cozyCard()
+        .overlay(alignment: .topTrailing) {
+            FirstMomentToast(
+                isPresented: $showFirstHabitToast,
+                message: "First habit check saved."
+            )
+            .padding(12)
+            .allowsHitTesting(false)
+        }
         .contextMenu {
             Button {
                 toggleHabit(on: Date())
@@ -344,11 +392,23 @@ struct HabitCard: View {
         let wasComplete = HabitMath.isComplete(keys: habit.completionKeys, on: day)
         dataStore.toggleHabit(id: habit.id, at: day)
         CozyFeedback.play(wasComplete ? .undo : .complete)
+        if !wasComplete && !hasCheckedFirstHabit {
+            hasCheckedFirstHabit = true
+            presentFirstHabitToast()
+        }
         withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
             habitFeedback = wasComplete ? "Unchecked — no worries" : "+8 XP rhythm"
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             withAnimation(CozyMotion.gentle(reduceMotion, duration: 0.25)) { habitFeedback = nil }
+        }
+    }
+
+    private func presentFirstHabitToast() {
+        showFirstHabitToast = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1800))
+            showFirstHabitToast = false
         }
     }
 }
@@ -419,6 +479,7 @@ private struct HabitHeatmapCell: View {
             Rectangle()
                 .fill(isDone ? hitColor : missColor)
                 .frame(width: 12, height: 12)
+                .frame(width: 24, height: 24)
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
@@ -1320,6 +1381,7 @@ struct DeskRoomScene: View {
 
 struct RoomRewardIcon: View {
     @EnvironmentObject private var dataStore: AppDataStore
+    @AppStorage("selectedRewardsMode") private var selectedModeRaw: String = RewardsRoomMode.room.rawValue
     let reward: RewardItem
     let size: CGFloat
 
@@ -1346,7 +1408,7 @@ struct RoomRewardIcon: View {
                 }
             }
             Button {
-                // No detail view; nudge users toward the inventory screen.
+                selectedModeRaw = RewardsRoomMode.inventory.rawValue
                 NotificationCenter.default.post(name: .cozyOpenSection, object: AppSection.rewards.rawValue)
             } label: {
                 Label("Show details", systemImage: "info.circle")

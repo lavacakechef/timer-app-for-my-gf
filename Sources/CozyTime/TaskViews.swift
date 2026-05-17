@@ -93,6 +93,7 @@ struct TodayView: View {
 private struct MenuBarHintBanner: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("mascotName") private var mascotName = "Mochi"
     @AppStorage("hasSeenMenuBarHint") private var hasSeenHint = false
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     @State private var visible = false
@@ -103,7 +104,7 @@ private struct MenuBarHintBanner: View {
                 Image(systemName: "menubar.dock.rectangle")
                     .font(CozyType.body)
                     .foregroundStyle(.secondary)
-                Text("Mochi lives in your menu bar — click the icon to quick-focus anytime.")
+                Text("\(mascotName) lives in your menu bar — click the icon to quick-focus anytime.")
                     .font(CozyType.caption)
                     .foregroundStyle(CozyPalette.secondaryText(colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -575,28 +576,29 @@ struct QuickAddBar: View {
         @ViewBuilder
         private var listChip: some View {
             if isCreatingNewList {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Image(systemName: "tray.full.fill")
                         .font(CozyType.captionStrong)
                         .foregroundStyle(CozyPalette.focusJade)
                     TextField("New list name", text: $newListDraft)
                         .font(CozyType.captionStrong)
                         .textFieldStyle(.plain)
-                        .frame(width: 120)
+                        .frame(minWidth: 120)
                         .onSubmit { onCommitNewList() }
                     Button { onCommitNewList() } label: {
-                        Image(systemName: "checkmark").font(.caption2.weight(.bold))
+                        Image(systemName: "checkmark")
                     }
-                    .buttonStyle(.plain)
+                    .cozyIconButton(size: CozyLayout.hitSize)
                     .disabled(newListDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityLabel("Save new list")
                     Button { isCreatingNewList = false; newListDraft = "" } label: {
-                        Image(systemName: "xmark").font(.caption2.weight(.bold))
+                        Image(systemName: "xmark")
                     }
-                    .buttonStyle(.plain)
+                    .cozyIconButton(size: CozyLayout.hitSize)
+                    .accessibilityLabel("Cancel new list")
                 }
                 .padding(.horizontal, CozyLayout.badgePaddingMediumH)
-                .padding(.vertical, CozyLayout.badgePaddingLargeV)
-                .frame(height: 28)
+                .frame(minHeight: CozyLayout.hitSize)
                 .background(Capsule().fill(.quaternary))
             } else {
                 Menu {
@@ -866,12 +868,12 @@ struct FirstSessionCard: View {
             mascotButton
             VStack(spacing: 4) {
                 Label("Pet \(mascotName)", systemImage: "hand.tap.fill")
-                    .font(.caption.weight(.bold))
+                    .font(CozyType.captionStrong)
                 Text(timerStore.isActive ? "Keeping time" : "Ready to start")
-                    .font(.caption2.weight(.semibold))
+                    .font(CozyType.footnote)
                     .foregroundStyle(CozyPalette.secondaryText(colorScheme))
                 if isMochiSleeping {
-                    Label("Mochi missed you! Welcome back.", systemImage: "zzz")
+                    Label("\(mascotName) missed you! Welcome back.", systemImage: "zzz")
                         .font(CozyType.captionStrong)
                         .foregroundStyle(CozyPalette.secondaryText(colorScheme))
                         .multilineTextAlignment(.center)
@@ -1285,23 +1287,9 @@ struct TaskList: View {
             }
             .accessibilityHint("Drop text here to create tasks, one per line.")
         } else {
-            // UX HIGH #86 — drag-to-reorder. `.onMove` is wired here so the
-            // affordance is in place; it activates fully when the data layer
-            // gains a `moveTask(from:to:)` method.
-            // TODO(UX-86): add `dataStore.moveTask(from: IndexSet, to: Int)`
-            //   on AppDataStore (both JSON + SwiftData backends) and persist a
-            //   `sortIndex` on TaskItem so reorder survives relaunch. Once that
-            //   lands, drop the LazyVStack in favour of `List` (the visual edit
-            //   handle SwiftUI ships only renders inside List) and call
-            //   `dataStore.moveTask(from: source, to: destination)` below.
             LazyVStack(spacing: 10) {
                 ForEach(tasks) { task in
                     TaskRow(task: task)
-                }
-                .onMove { _, _ in
-                    // TODO(UX-86): persist sortIndex in TaskItem + dataStore.
-                    // No-op until `dataStore.moveTask` exists; in-memory only
-                    // because `tasks` here is a computed read-only slice.
                 }
             }
         }
@@ -1361,10 +1349,13 @@ struct TaskRow: View {
     @EnvironmentObject private var notifications: NotificationService
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("mascotName") private var mascotName = "Mochi"
+    @AppStorage("hasCompletedFirstTask") private var hasCompletedFirstTask = false
     let task: TaskItem
     @State private var lastCompletionAction: Bool?
     @State private var isEditing = false
     @State private var isConfirmingDelete = false
+    @State private var showFirstTaskToast = false
     @State private var editTitle = ""
     @State private var editMinutes = 25
     @FocusState private var initialFocus: Field?
@@ -1379,13 +1370,14 @@ struct TaskRow: View {
                         .font(CozyType.cardTitle)
                         .frame(width: 28, height: 28)
                 }
+                .frame(width: CozyLayout.hitSize, height: CozyLayout.hitSize)
                 .cozyPressable(pressedScale: 0.90, hoverScale: 1.08)
                 .contentShape(Rectangle())
                 .foregroundStyle(task.isCompleted ? CozyPalette.focusJade : .secondary)
                 .help(task.isCompleted ? "Mark incomplete" : "Complete task")
                 .accessibilityLabel(task.isCompleted ? "Mark \(task.title) incomplete" : "Complete \(task.title)")
                 .accessibilityIdentifier("task.complete")
-                .padding(.top, 2)
+                .padding(.top, 0)
                 .alignmentGuide(.top) { dimension in dimension[.top] }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -1471,11 +1463,19 @@ struct TaskRow: View {
             }
         }
         .cozyCard()
+        .overlay(alignment: .topTrailing) {
+            FirstMomentToast(
+                isPresented: $showFirstTaskToast,
+                message: "\(mascotName) noticed your first finished task."
+            )
+            .padding(12)
+            .allowsHitTesting(false)
+        }
         .scrollTransition(axis: .vertical) { content, phase in
             content
                 .opacity(phase.isIdentity ? 1 : 0.7)
                 .scaleEffect(phase.isIdentity ? 1 : 0.97)
-                .offset(y: phase.isIdentity ? 0 : 5)
+                .offset(y: phase.isIdentity ? 0 : 4)
         }
         .accessibilityIdentifier("task.row")
         // UX HIGH #84 — right-click / secondary-click context menu on each
@@ -1614,6 +1614,10 @@ struct TaskRow: View {
             lastCompletionAction = willComplete
         }
         CozyFeedback.play(willComplete ? .complete : .undo)
+        if willComplete && !hasCompletedFirstTask {
+            hasCompletedFirstTask = true
+            presentFirstTaskToast()
+        }
     }
 
     private func undoCompletionAction() {
@@ -1635,6 +1639,14 @@ struct TaskRow: View {
 
     private var cleanEditTitle: String {
         editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func presentFirstTaskToast() {
+        showFirstTaskToast = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1800))
+            showFirstTaskToast = false
+        }
     }
 
     private func saveEdit() {
@@ -1684,7 +1696,7 @@ struct TaskRow: View {
 
     private func completionFeedback(wasCompleted: Bool) -> some View {
         HStack(spacing: 8) {
-            Label(wasCompleted ? "Done! Mochi clapped for that one." : "Moved back to active", systemImage: wasCompleted ? "sparkles" : "arrow.uturn.backward")
+            Label(wasCompleted ? "Done! \(mascotName) clapped for that one." : "Moved back to active", systemImage: wasCompleted ? "sparkles" : "arrow.uturn.backward")
                 .lineLimit(1)
             Spacer()
             Button("Undo") {

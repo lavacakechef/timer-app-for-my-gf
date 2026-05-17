@@ -33,6 +33,14 @@ This file is the canonical "what changed in each build" log. It exists for two r
 - Tidy-up bullet (optional).
 -->
 
+## v0.2.1 — 2026-05-17
+
+- Countdown and task forms now hold one clean grid at compact and wide widths.
+- First focus, first task, first habit, calendar diary, and reward-room paths
+  feel more connected.
+- The focus slider updates live, and the release notes now call out the local
+  UI-test runner blocker instead of hiding it.
+
 ## v0.2.0 — 2026-05-16
 
 - You can now claim focus rewards into a diary loop: reward, reflection,

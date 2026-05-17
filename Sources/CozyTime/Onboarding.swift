@@ -9,15 +9,10 @@
 // presentation primitive + the @AppStorage gates so the gates can't drift
 // out of sync.
 //
-// TODO(UX-83-wireup): present FirstMomentToast from:
-//   - TaskViews:        when a task is marked complete for the first time
-//                       (gate on `hasCompletedFirstTask`)
-//   - FocusViews:       when a focus session finishes for the first time
-//                       (gate on `hasFinishedFirstFocus`)
-//   - HabitStatsViews:  when a habit is checked off for the first time
-//                       (gate on `hasCheckedFirstHabit`)
-// Each wiring site should set its `@AppStorage` flag to true the moment it
-// fires the toast so we only ever congratulate the very first instance.
+// Wired in:
+//   - TaskViews:        first task marked complete
+//   - FocusViews:       first focus session saved
+//   - HabitStatsViews:  first habit checked off
 
 import SwiftUI
 

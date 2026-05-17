@@ -13,6 +13,7 @@ struct FocusView: View {
     @AppStorage("selectedTimerShape") private var selectedTimerShape = CozyTimerShape.ring.rawValue
     @AppStorage("showMotivationQuotes") private var showMotivationQuotes = true
     @AppStorage("quoteStyle") private var quoteStyle = CozyQuoteStyle.cozy.rawValue
+    @AppStorage("cozyHapticsEnabled") private var hapticsEnabled = true
 
     @State private var selectedTaskID: UUID?
     @State private var customMinutes = 25
@@ -109,17 +110,17 @@ struct FocusView: View {
                 .onTapGesture {
                     guard !reduceMotion else { return }
                     Task {
-                        withAnimation(.spring(response: 0.18, dampingFraction: 0.45)) { petScale = 1.12 }
+                        withAnimation(CozyMotion.spring(reduceMotion, response: 0.18, damping: 0.45)) { petScale = 1.12 }
                         try? await Task.sleep(for: .milliseconds(175))
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.60)) { petScale = 1.0 }
+                        withAnimation(CozyMotion.spring(reduceMotion, response: 0.28, damping: 0.60)) { petScale = 1.0 }
                     }
                 }
                 .onChange(of: dataStore.progression.coinsAvailable) { _, _ in
                     guard !reduceMotion else { return }
                     Task {
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.40)) { pawReactScale = 1.14 }
+                        withAnimation(CozyMotion.spring(reduceMotion, response: 0.22, damping: 0.40)) { pawReactScale = 1.14 }
                         try? await Task.sleep(for: .milliseconds(200))
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.68)) { pawReactScale = 1.0 }
+                        withAnimation(CozyMotion.spring(reduceMotion, response: 0.45, damping: 0.68)) { pawReactScale = 1.0 }
                     }
                 }
             CozyTimerChrome(progress: progress, color: accent, skin: timerSkin, shape: shape)
@@ -167,11 +168,9 @@ struct FocusView: View {
             // VStack's 14pt spacing this gives 20pt — on-grid, more
             // breathable, doesn't widen the other rows.
             ViewThatFits(in: .horizontal) {
-                timerControls
+                timerControlsRow
                     .padding(.top, 8)
-                VStack(spacing: 8) {
-                    timerControls
-                }
+                timerControlsStack
                 .padding(.top, 8)
             }
 
@@ -188,7 +187,11 @@ struct FocusView: View {
 
     private var focusSideColumn: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if timerStore.isActive {
+            if timerStore.needsCompletionReview {
+                FocusReviewWaitingCard(taskTitle: timerStore.activeTaskTitle) {
+                    completeFocus()
+                }
+            } else if timerStore.isActive {
                 FocusRunningCompanionCard(phase: timerStore.phase(at: timerStore.currentDate), boost: activeBoost)
             } else {
                 FocusSetupCard(
@@ -231,85 +234,127 @@ struct FocusView: View {
         }
     }
 
-    private var timerControls: some View {
+    private var timerControlsRow: some View {
         // Force equal-width columns so the primary / secondary / discard buttons no longer
         // drift between 132 / 112 / 128 / 118 pt widths every state change. `frame(maxWidth:
         // .infinity)` makes each button claim its share of the row; `fixedSize(horizontal:
         // false, vertical: true)` keeps labels readable without horizontal compression.
         HStack(spacing: 10) {
-            if timerStore.needsCompletionReview {
-                Button {
-                    completeFocus()
-                } label: {
-                    Label("Save this win", systemImage: "checkmark.seal.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .cozyPrimaryButton(minWidth: 132)
-                .accessibilityIdentifier("focus.claimReward")
-            } else if timerStore.isRunning {
-                Button {
-                    pauseFocus()
-                } label: {
-                    Label("Pause", systemImage: "pause.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .cozyPrimaryButton(minWidth: 132)
-                .accessibilityIdentifier("focus.pause")
-            } else if timerStore.isPaused {
-                Button {
-                    resumeFocus()
-                } label: {
-                    Label("Resume", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .cozyPrimaryButton(minWidth: 132)
-                .accessibilityIdentifier("focus.resume")
-            } else {
-                Button {
-                    startFocus()
-                } label: {
-                    Label("Start Focus", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .cozyPrimaryButton(minWidth: 132)
-                .disabled(!timerStore.canStartNewSession)
-                .accessibilityIdentifier("focus.timer.start")
-            }
-
+            primaryTimerControl
             if !timerStore.needsCompletionReview {
-                Button {
-                    completeFocus()
-                } label: {
-                    Label(wrapButtonTitle, systemImage: "checkmark.seal.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .cozySecondaryButton(minWidth: 132)
-                .disabled(!timerStore.isActive && timerStore.snapshot.state != .completed)
-                .accessibilityIdentifier("focus.complete")
+                wrapTimerControl
             }
+            cancelTimerControl
+        }
+        .modifier(FocusControlFeedback(
+            hapticsEnabled: hapticsEnabled,
+            isRunning: timerStore.isRunning,
+            isPaused: timerStore.isPaused,
+            needsCompletionReview: timerStore.needsCompletionReview
+        ))
+    }
 
+    private var timerControlsStack: some View {
+        VStack(spacing: 8) {
+            primaryTimerControl
+            if !timerStore.needsCompletionReview {
+                wrapTimerControl
+            }
+            cancelTimerControl
+        }
+        .modifier(FocusControlFeedback(
+            hapticsEnabled: hapticsEnabled,
+            isRunning: timerStore.isRunning,
+            isPaused: timerStore.isPaused,
+            needsCompletionReview: timerStore.needsCompletionReview
+        ))
+    }
+
+    @ViewBuilder
+    private var primaryTimerControl: some View {
+        if timerStore.needsCompletionReview {
             Button {
-                stopFocus()
+                completeFocus()
             } label: {
-                Label("Cancel session", systemImage: "xmark.circle")
+                Label("Save this win", systemImage: "checkmark.seal.fill")
                     .frame(maxWidth: .infinity)
             }
-            // Ghost style — destructive action should NOT visually compete with
-            // Pause / Save partial. Apple HIG sibling-button hierarchy: primary
-            // visual weight goes to the affirmative action.
-            .cozyGhostButton(minWidth: 132)
-            .disabled(!timerStore.isActive)
-            .help("Stop without saving any progress")
-            .accessibilityLabel("Cancel session without saving")
-            .accessibilityIdentifier("focus.stop")
+            .cozyPrimaryButton(minWidth: 132)
+            .accessibilityIdentifier("focus.claimReward")
+        } else if timerStore.isRunning {
+            Button {
+                pauseFocus()
+            } label: {
+                Label("Pause", systemImage: "pause.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .cozyPrimaryButton(minWidth: 132)
+            .accessibilityIdentifier("focus.pause")
+        } else if timerStore.isPaused {
+            Button {
+                resumeFocus()
+            } label: {
+                Label("Resume", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .cozyPrimaryButton(minWidth: 132)
+            .accessibilityIdentifier("focus.resume")
+        } else {
+            Button {
+                startFocus()
+            } label: {
+                Label("Start Focus", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .cozyPrimaryButton(minWidth: 132)
+            .disabled(!timerStore.canStartNewSession)
+            .accessibilityIdentifier("focus.timer.start")
         }
-        // SwiftUI-native haptic feedback (macOS 14+). Three triggers cover the
-        // three main state transitions: start/resume → .impact; pause → .stop;
-        // completion review saved → .success.
-        .sensoryFeedback(.impact(weight: .medium), trigger: timerStore.isRunning)
-        .sensoryFeedback(.stop, trigger: timerStore.isPaused)
-        .sensoryFeedback(.success, trigger: timerStore.needsCompletionReview)
     }
+
+    private var wrapTimerControl: some View {
+        Button {
+            completeFocus()
+        } label: {
+            Label(wrapButtonTitle, systemImage: "checkmark.seal.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .cozySecondaryButton(minWidth: 132)
+        .disabled(!timerStore.isActive && timerStore.snapshot.state != .completed)
+        .accessibilityIdentifier("focus.complete")
+    }
+
+    private var cancelTimerControl: some View {
+        Button {
+            stopFocus()
+        } label: {
+            Label("Cancel session", systemImage: "xmark.circle")
+                .frame(maxWidth: .infinity)
+        }
+        // Ghost style — destructive action should NOT visually compete with
+        // Pause / Save partial. Apple HIG sibling-button hierarchy: primary
+        // visual weight goes to the affirmative action.
+        .cozyGhostButton(minWidth: 132)
+        .disabled(!timerStore.isActive)
+        .help("Stop without saving any progress")
+        .accessibilityLabel("Cancel session without saving")
+        .accessibilityIdentifier("focus.stop")
+    }
+
+    private struct FocusControlFeedback: ViewModifier {
+        let hapticsEnabled: Bool
+        let isRunning: Bool
+        let isPaused: Bool
+        let needsCompletionReview: Bool
+
+        func body(content: Content) -> some View {
+            content
+                .sensoryFeedback(.impact(weight: .medium), trigger: hapticsEnabled && isRunning)
+                .sensoryFeedback(.stop, trigger: hapticsEnabled && isPaused)
+                .sensoryFeedback(.success, trigger: hapticsEnabled && needsCompletionReview)
+        }
+    }
+
 
     private var wrapButtonTitle: String {
         guard timerStore.isActive else { return "Complete" }
@@ -528,6 +573,40 @@ struct FocusRewardPreview: View {
             return "all starter items owned"
         }
         return "\(next.name) at \(next.coinCost) paws"
+    }
+}
+
+private struct FocusReviewWaitingCard: View {
+    let taskTitle: String
+    let onReview: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                MascotView(state: .complete, size: .avatar)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Reward waiting")
+                        .font(CozyType.cardTitle)
+                    Text(taskTitle)
+                        .font(CozyType.body)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            CozyFieldHint(text: "Save this session before starting another one. Mochi will add the diary note, rewards, and calendar receipt.")
+
+            Button {
+                onReview()
+            } label: {
+                Label("Review and save", systemImage: "gift.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .cozyPrimaryButton(fullWidth: true)
+            .accessibilityIdentifier("focus.reviewWaiting")
+        }
+        .cozyCard()
     }
 }
 
@@ -1281,7 +1360,7 @@ private struct FocusRingAura: View {
                 )
             )
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 5.0)) { ctx in
+            TimelineView(.periodic(from: .now, by: 1.0 / 5.0)) { ctx in
                 animatedAura(t: ctx.date.timeIntervalSince1970)
             }
         }
@@ -1325,11 +1404,7 @@ private struct CozyConfettiBurst: View {
         let startDelay: Double
     }
 
-    private static let palette: [Color] = [
-        Color(hex: "#FFB4A2"), Color(hex: "#DDD6F3"),
-        Color(hex: "#B4D4E7"), Color(hex: "#D9F06A"),
-        Color(hex: "#F7C5A0"), Color(hex: "#C9E8FF")
-    ]
+    private static let palette: [Color] = CozyPalette.confettiPop
 
     private let pieces: [Piece] = (0..<32).map { i in
         let colors = CozyConfettiBurst.palette
@@ -1350,7 +1425,7 @@ private struct CozyConfettiBurst: View {
 
     var body: some View {
         if visible {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { ctx in
                 let elapsed = ctx.date.timeIntervalSince(startDate)
                 Canvas { context, size in
                     for piece in pieces {
@@ -1392,6 +1467,8 @@ struct FocusCompletionReview: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var dataStore: AppDataStore
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
+    @AppStorage("mascotName") private var mascotName = "Mochi"
+    @AppStorage("hasFinishedFirstFocus") private var hasFinishedFirstFocus = false
     let summary: FocusCompletionSummary
     @Binding var reflection: String
     let done: () -> Void
@@ -1402,6 +1479,7 @@ struct FocusCompletionReview: View {
     @State private var showStamp = false
     @State private var rewardPulse = false
     @State private var showConfetti = false
+    @State private var showFirstFocusToast = false
     @FocusState private var reflectionFocused: Bool
 
     private var theme: CozyTheme {
@@ -1499,6 +1577,14 @@ struct FocusCompletionReview: View {
                     .accessibilityHidden(true)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            FirstMomentToast(
+                isPresented: $showFirstFocusToast,
+                message: "\(mascotName) saved your first focus."
+            )
+            .padding(12)
+            .allowsHitTesting(false)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Focus completion review")
         .sheet(isPresented: $presentingUnlockSheet) {
@@ -1506,7 +1592,11 @@ struct FocusCompletionReview: View {
                 CozyUnlockSheet(
                     result: roll,
                     isFirstEver: isFirstEverUnlock,
-                    dismiss: { presentingUnlockSheet = false }
+                    dismiss: { presentingUnlockSheet = false },
+                    takeToRoom: {
+                        presentingUnlockSheet = false
+                        openRewards()
+                    }
                 )
             }
         }
@@ -1546,6 +1636,10 @@ struct FocusCompletionReview: View {
                 try? await Task.sleep(for: .milliseconds(3000))
                 rewardPulse = false
             }
+            if !hasFinishedFirstFocus {
+                hasFinishedFirstFocus = true
+                presentFirstFocusToast()
+            }
             // After the reveal lands, decide whether this unlock deserves a moment.
             // Reduce Motion: skip the small extra delay; present immediately.
             if shouldPresentUnlockSheet {
@@ -1555,6 +1649,14 @@ struct FocusCompletionReview: View {
                 reflectionFocused = false
                 presentingUnlockSheet = true
             }
+        }
+    }
+
+    private func presentFirstFocusToast() {
+        showFirstFocusToast = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1800))
+            showFirstFocusToast = false
         }
     }
 
@@ -1606,6 +1708,7 @@ struct CozyUnlockSheet: View {
     let result: AdventureRollResult
     let isFirstEver: Bool
     let dismiss: () -> Void
+    let takeToRoom: () -> Void
 
     // Two-stage reveal — researched recipe (Duolingo chest + Stardew geode).
     //   .wrapped:  gift box with idle wiggle, tap target
@@ -1707,17 +1810,22 @@ struct CozyUnlockSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .opacity(stage == .revealed ? 1 : 0.6)
 
-            Button(action: dismiss) {
+            Button(action: takeToRoom) {
                 Label(stage == .revealed ? "Take it to the room" : "Tap the gift",
                       systemImage: stage == .revealed ? "sparkles" : "hand.tap.fill")
                     .frame(maxWidth: .infinity)
             }
             .cozyPrimaryButton(fullWidth: true)
             .disabled(stage != .revealed)
-            // SM-001: Escape dismisses too. Existing primary CTA already
-            // provides the visible affordance, so no extra X needed.
-            .keyboardShortcut(.cancelAction)
-            .accessibilityIdentifier("focus.unlockSheet.dismiss")
+            .keyboardShortcut(.defaultAction)
+            .accessibilityIdentifier("focus.unlockSheet.takeToRoom")
+
+            if stage == .revealed {
+                Button("Back to review", action: dismiss)
+                    .cozyGhostButton(fullWidth: true)
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("focus.unlockSheet.back")
+            }
         }
         .padding(28)
         .frame(idealWidth: 360, maxWidth: 480)
@@ -1930,7 +2038,6 @@ struct MenuBarPanelView: View {
     // FocusView, so 25→90 doesn't silently snap back to 25.
     @AppStorage("focus.lastFocusMinutes") private var lastFocusMinutes = 25
     @State private var quickTask = ""
-    @State private var lastMenuBarSaveMessage: String?
 
     private var theme: CozyTheme {
         CozyTheme.named(selectedTheme)
@@ -1940,10 +2047,6 @@ struct MenuBarPanelView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 timerHero
-                if let lastMenuBarSaveMessage {
-                    menuBarSaveSummary(message: lastMenuBarSaveMessage)
-                        .transition(.opacity)
-                }
                 todayProgressCard
                 focusDiaryCard
                 quickCaptureCard
@@ -2235,13 +2338,14 @@ struct MenuBarPanelView: View {
     private var menuBarSecondaryButton: some View {
         if timerStore.needsCompletionReview {
             Button {
-                completeMenuBarFocus()
+                openSection(.focus)
             } label: {
-                Label("Save this win", systemImage: "tray.and.arrow.down.fill")
+                Label("Open review", systemImage: "tray.and.arrow.down.fill")
                     .frame(maxWidth: .infinity)
             }
             .cozySecondaryButton(fullWidth: true)
-            .accessibilityIdentifier("menubar.saveWithoutNote")
+            .help("Open the Focus screen to save the diary note and reward.")
+            .accessibilityIdentifier("menubar.openReview")
         } else if timerStore.isActive {
             Button {
                 timerStore.cancel()
@@ -2411,67 +2515,6 @@ struct MenuBarPanelView: View {
 
     private func openSection(_ section: AppSection) {
         CozyAppDelegate.openSection(section)
-    }
-
-    private func completeMenuBarFocus() {
-        guard timerStore.isActive || timerStore.needsCompletionReview else { return }
-        let now = Date()
-        let savedTaskTitle = timerStore.activeTaskTitle
-        let boost = FocusRewardResolver.activeBoostFromDefaults()
-        let reward = FocusRewardResolver.resolve(
-            snapshot: timerStore.snapshot,
-            taskTitle: timerStore.activeTaskTitle,
-            boost: boost,
-            existingRewards: dataStore.rewards,
-            lifetimeSessionCount: dataStore.focusSessions.count,
-            now: now
-        )
-        timerStore.complete(at: now)
-        Task { await notifications.cancelFocusNotifications() }
-        dataStore.addFocusSession(reward.session)
-        if let item = reward.adventureRoll?.reward {
-            dataStore.unlockReward(item)
-        }
-        if reward.shouldCompleteTask, let taskID = timerStore.activeTaskID {
-            dataStore.completeTask(id: taskID, at: now)
-        }
-        CozyFeedback.play(reward.isRewardEligible ? .reward : .complete)
-        withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
-            lastMenuBarSaveMessage = reward.isRewardEligible
-                ? "\(reward.minutes)m \(savedTaskTitle) · +\(reward.xp) XP · +\(reward.rewardPaws) paws"
-                : "\(reward.minutes)m saved. Focus rewards start at 5m."
-        }
-        timerStore.reset()
-        UserDefaults.standard.set("", forKey: "focus.activeBoostID")
-    }
-
-    private func menuBarSaveSummary(message: String) -> some View {
-        MenuBarSurface {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(CozyType.cardTitle)
-                    .foregroundStyle(CozyPalette.focusJade)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Saved to diary")
-                        .font(CozyType.controlStrong)
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Button {
-                    openSection(.calendar)
-                } label: {
-                    Image(systemName: "calendar")
-                        .frame(width: 16, height: 16)
-                }
-                .cozyIconButton(size: CozyLayout.compactHitSize)
-                .help("Open calendar diary")
-                .accessibilityLabel("Open calendar diary")
-            }
-        }
-        .accessibilityIdentifier("menubar.saveSummary")
     }
 
     private func scheduleMenuBarFocusCompletion() {

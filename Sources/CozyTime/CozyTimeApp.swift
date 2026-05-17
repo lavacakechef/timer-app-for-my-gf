@@ -255,6 +255,10 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
 
         Self.scheduleMainWindowOpen(after: 0.35)
         Self.scheduleMainWindowOpen(after: 1.0)
+        if CozyTimeApp.isUITesting {
+            Self.scheduleUITestingWindowSize(after: 0.6)
+            Self.scheduleUITestingWindowSize(after: 1.2)
+        }
     }
 
     @objc private func handleDidWake(_ notification: Notification) {
@@ -361,7 +365,8 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
         )
         let hostingController = NSHostingController(rootView: rootView)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 820)
-        let windowSize = NSSize(
+        let requestedSize = uiTestingWindowSize
+        let windowSize = requestedSize ?? NSSize(
             width: min(1120, max(720, screenFrame.width - 80)),
             height: min(760, max(600, screenFrame.height - 80))
         )
@@ -383,6 +388,47 @@ final class CozyAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         return true
+    }
+
+    @MainActor
+    private static func scheduleUITestingWindowSize(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            Task { @MainActor in
+                applyUITestingWindowSizeIfRequested()
+            }
+        }
+    }
+
+    @MainActor
+    private static func applyUITestingWindowSizeIfRequested() {
+        guard let requestedSize = uiTestingWindowSize,
+              let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) else {
+            return
+        }
+        let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 820)
+        let clampedSize = NSSize(
+            width: min(max(requestedSize.width, 720), screenFrame.width),
+            height: min(max(requestedSize.height, 600), screenFrame.height)
+        )
+        let origin = NSPoint(
+            x: screenFrame.midX - clampedSize.width / 2,
+            y: screenFrame.midY - clampedSize.height / 2
+        )
+        window.setFrame(NSRect(origin: origin, size: clampedSize), display: true)
+    }
+
+    private static var uiTestingWindowSize: NSSize? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let markerIndex = arguments.firstIndex(of: "-ui-testing-window-size") else { return nil }
+        let valueIndex = arguments.index(after: markerIndex)
+        guard arguments.indices.contains(valueIndex) else { return nil }
+        let parts = arguments[valueIndex].lowercased().split(separator: "x")
+        guard parts.count == 2,
+              let width = Double(parts[0]),
+              let height = Double(parts[1]) else {
+            return nil
+        }
+        return NSSize(width: width, height: height)
     }
 
     @MainActor
