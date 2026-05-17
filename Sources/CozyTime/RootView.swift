@@ -89,7 +89,7 @@ struct RootView: View {
     private let sidebarGroups: [(title: String, subtitle: String, sections: [AppSection])] = [
         ("Start", "Focus & task quick-add", [.today, .focus, .tasks]),
         ("Plan", "Tasks & countdowns", [.calendar]),
-        ("Grow", "Habits, rewards & shop", [.habits, .stats, .rewards, .shop]),
+        ("Grow", "Habits, rewards & shop", [.habits, .stats, .rewards]),
         ("App", "Settings & help", [.settings])
     ]
 

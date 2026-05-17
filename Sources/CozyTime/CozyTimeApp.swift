@@ -61,6 +61,7 @@ struct CozyTimeApp: App {
         // CozyMainWindowContent, so `.contentSize` keeps the system from
         // forcing a fixed window geometry while still respecting our floor.
         .windowResizability(.contentSize)
+        .windowBackgroundDragBehavior(.enabled)
         .commands {
             CozyCommands(dataStore: dataStore, timerStore: timerStore, notifications: notifications)
         }

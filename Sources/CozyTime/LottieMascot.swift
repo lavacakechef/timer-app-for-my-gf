@@ -67,7 +67,8 @@ struct CozyLottieMascot: View {
             }
         default: // "mochi" (Pancake) and any unknown character with the mochi-* set
             switch state {
-            case .idle, .countdown, .breakTime, .overdue: "mochi-idle"
+            case .idle, .countdown, .overdue: "mochi-idle"
+            case .breakTime: "mochi-pause"    // bundled but previously unmapped
             case .settling, .focus, .deepFocus, .landing: "mochi-focus"
             case .complete: "mochi-complete"
             }

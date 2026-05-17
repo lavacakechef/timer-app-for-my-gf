@@ -63,10 +63,10 @@ public enum NotificationPlanner {
 
         return NotificationDraft(
             identifier: "countdown-\(eventID.uuidString)-\(daysBefore)",
-            title: "\(title) is getting close",
+            title: "\(title) is coming up soon",
             body: daysBefore == 0
-                ? "Today is the day."
-                : "\(daysBefore) \(daysBefore == 1 ? "day" : "days") left. Pick the next tiny step.",
+                ? "Today's the big day — \(title) is here!"
+                : "\(daysBefore) \(daysBefore == 1 ? "day" : "days") until \(title). Mochi says: one tiny prep step today!",
             fireDate: fireDate,
             threadIdentifier: "cozy.countdown.\(eventID.uuidString)"
         )

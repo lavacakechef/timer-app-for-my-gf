@@ -187,7 +187,7 @@ enum CozyLayout {
     static let controlHeight: CGFloat = 44
     static let compactControlHeight: CGFloat = 38
     static let hitSize: CGFloat = 44
-    static let compactHitSize: CGFloat = 38
+    static let compactHitSize: CGFloat = 44
     static let primaryButtonMinWidth: CGFloat = 108
     static let labeledControlMinWidth: CGFloat = 128
 
@@ -712,7 +712,7 @@ struct ThemeSwatch: View {
             }
             .frame(width: 28, height: 28)
             Text(theme.id)
-                .font(.callout.weight(isSelected ? .semibold : .regular))
+                .font(isSelected ? CozyType.controlStrong : CozyType.control)
                 .lineLimit(1)
         }
         .padding(.horizontal, 10)
@@ -1256,7 +1256,7 @@ struct CozyHeroCard: ViewModifier {
                                 LinearGradient(
                                     colors: colorScheme == .dark
                                         ? [Color(hex: "#302737"), Color(hex: "#211C24"), theme.accent.opacity(0.34)]
-                                        : [Color.white, theme.surfaceTint.opacity(0.30), CozyPalette.softSage.opacity(0.22)],
+                                        : [Color.white, theme.surfaceTint.opacity(0.30), theme.surfaceTint.opacity(0.16)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -1412,7 +1412,7 @@ struct CozyFormCaption: View {
                 .truncationMode(.tail)
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .font(.caption.weight(.bold))
+        .font(CozyType.captionStrong)
         .foregroundStyle(.secondary)
         .frame(minHeight: 17, alignment: .leading)
         .accessibilityLabel(title)
@@ -2364,7 +2364,9 @@ struct MascotView: View {
             // flagging. The mascot now sits cleanly against the host card.
 
             mascotBody(moment: moment)
-                .scaleEffect(state == .complete && !reduceMotion && !reducedDecoration ? 1.025 : 1)
+                .animation(.easeInOut(duration: 0.22), value: state)
+                .scaleEffect(state == .complete && !reduceMotion && !reducedDecoration ? 1.08 : 1)
+                .animation(.spring(response: 0.35, dampingFraction: 0.55), value: state == .complete)
                 // Polish pass — flattens layers via compositingGroup then
                 // applies Refactoring-UI two-shadow elevation (crisp + soft)
                 // plus a top-of-head plush gloss radial gradient. Adds depth
@@ -2440,6 +2442,8 @@ struct MascotView: View {
             // Reduce Motion / reducedDecoration users fall back to the
             // SwiftUI vector body, which has its own gentle idle life.
             CozyLottieMascot(characterID: lottieCharacter, state: state, size: size * 0.92)
+                .id(state)
+                .transition(.opacity.animation(.easeInOut(duration: 0.22)))
         } else {
             switch styleID {
             case "biscuit":
@@ -3110,13 +3114,14 @@ struct MascotIdleLife: ViewModifier {
                 // Blink: ~5.5 s cycle, last ≈190 ms is "lid down."
                 let blinkCycle = (t.truncatingRemainder(dividingBy: 5.5)) / 5.5
                 let isBlinking = blinkCycle > 0.965 && !skipExternalEyeBlink
+                // Tail wag: 9 s full cycle, ±4° rotation. Period is
+                // relatively prime with breath (3 s) and blink (5.5 s)
+                // so the three layers never sync into a metronome.
+                let tailWagAngle = 4.0 * sin(t * .pi / 4.5)
                 content
                     .scaleEffect(breathScale, anchor: .center)
                     .overlay {
                         if isBlinking {
-                            // Eyelid mask: a slim horizontal capsule across
-                            // where the eyes typically sit. Positioned via the
-                            // size parameter so it scales with the mascot.
                             Capsule()
                                 .fill(Color.black.opacity(0.65))
                                 .frame(width: size * 0.30, height: size * 0.04)
@@ -3125,6 +3130,7 @@ struct MascotIdleLife: ViewModifier {
                                 .accessibilityHidden(true)
                         }
                     }
+                    .rotationEffect(.degrees(tailWagAngle), anchor: UnitPoint(x: 0.5, y: 0.85))
             }
         }
     }
@@ -3298,10 +3304,28 @@ struct TwinkleBuddy: View {
     let size: CGFloat
     let color: Color
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
+        if reduceMotion {
+            starContent(twistDegrees: 0)
+        } else {
+            // 2.4 s period, asynchronous from breath (3 s), blink (5.5 s),
+            // tail wag (9 s). ±3° keeps it "twinkling" not "spinning."
+            TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { ctx in
+                let t = ctx.date.timeIntervalSinceReferenceDate
+                let twist = 3.0 * sin(t * .pi / 1.2)   // 2π/(π/1.2) = 2.4 s
+                starContent(twistDegrees: twist)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func starContent(twistDegrees: Double) -> some View {
         ZStack {
             StarShape()
                 .fill(color)
+                .rotationEffect(.degrees(twistDegrees))
                 .shadow(color: color.opacity(0.24), radius: size * 0.18, y: size * 0.05)
             HStack(spacing: size * 0.14) {
                 Circle().fill(CozyPalette.ink).frame(width: size * 0.09, height: size * 0.09)

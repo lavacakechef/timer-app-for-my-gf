@@ -47,14 +47,14 @@ struct FirstRunCoachmarkSheet: View {
         ),
         CoachmarkPage(
             title: "Start a focus",
-            body: "Tap Start. Even 1 minute counts. Pause anytime — Mochi understands.",
+            body: "Click Start. Even 1 minute counts. Pause anytime — Mochi understands.",
             mascotState: .focus,
             accentSymbol: "play.circle.fill",
             ctaTitle: "Next"
         ),
         CoachmarkPage(
-            title: "Earn paws → decorate",
-            body: "Each block earns paws. Spend them in the Shop to decorate Mochi's room.",
+            title: "Decorate Mochi's room",
+            body: "Decorate Mochi's room with every focus block you finish. Earned paws are yours to spend in the Shop.",
             mascotState: .complete,
             accentSymbol: "sparkles",
             ctaTitle: "Let's go"

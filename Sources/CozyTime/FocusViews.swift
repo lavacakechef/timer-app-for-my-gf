@@ -20,6 +20,8 @@ struct FocusView: View {
     @State private var pendingBoostID = FocusBoost.default.id
     @State private var completionSummary: FocusCompletionSummary?
     @State private var setupRollsUsed = 0
+    @State private var petScale: CGFloat = 1.0
+    @State private var pawReactScale: CGFloat = 1.0
     @AppStorage("focus.activeBoostID") private var activeBoostID = ""
     // Persist the last duration so the menu-bar quick-start and ⌘-shortcut both
     // honor what the user actually picked instead of resetting to 25 every time.
@@ -102,14 +104,33 @@ struct FocusView: View {
         return VStack(spacing: 20) {
             FocusPhaseHeader(phase: phase, boost: activeBoostID.isEmpty ? nil : activeBoost)
             MascotView(state: mascotState(for: phase), size: .hero)
+                .accessibilityHidden(true)
+                .scaleEffect(max(petScale, pawReactScale))
+                .onTapGesture {
+                    guard !reduceMotion else { return }
+                    Task {
+                        withAnimation(.spring(response: 0.18, dampingFraction: 0.45)) { petScale = 1.12 }
+                        try? await Task.sleep(for: .milliseconds(175))
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.60)) { petScale = 1.0 }
+                    }
+                }
+                .onChange(of: dataStore.progression.coinsAvailable) { _, _ in
+                    guard !reduceMotion else { return }
+                    Task {
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.40)) { pawReactScale = 1.14 }
+                        try? await Task.sleep(for: .milliseconds(200))
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.68)) { pawReactScale = 1.0 }
+                    }
+                }
             CozyTimerChrome(progress: progress, color: accent, skin: timerSkin, shape: shape)
-                .frame(width: 206, height: 206)
+                .frame(width: 208, height: 208)
+                .background(FocusRingAura(phase: phase, accent: accent))
                 .overlay {
                     VStack(spacing: 6) {
                         Text(CozyFormatters.timerString(remaining))
                             .font(CozyType.timer)
                             .monospacedDigit()
-                        Text(timerStore.isActive || timerStore.needsCompletionReview ? "Focus" : "Ready")
+                        Text(timerStore.isActive || timerStore.needsCompletionReview ? "Focus" : "Let's go")
                             .font(CozyType.rowTitle)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -129,6 +150,7 @@ struct FocusView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.82)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 260, minHeight: 40)
             }
@@ -219,7 +241,7 @@ struct FocusView: View {
                 Button {
                     completeFocus()
                 } label: {
-                    Label("Save session", systemImage: "checkmark.seal.fill")
+                    Label("Save this win", systemImage: "checkmark.seal.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .cozyPrimaryButton(minWidth: 132)
@@ -269,7 +291,7 @@ struct FocusView: View {
             Button {
                 stopFocus()
             } label: {
-                Label("Discard", systemImage: "xmark.circle")
+                Label("Cancel session", systemImage: "xmark.circle")
                     .frame(maxWidth: .infinity)
             }
             // Ghost style — destructive action should NOT visually compete with
@@ -277,8 +299,8 @@ struct FocusView: View {
             // visual weight goes to the affirmative action.
             .cozyGhostButton(minWidth: 132)
             .disabled(!timerStore.isActive)
-            .help("Discard without saving")
-            .accessibilityLabel("Discard session without saving")
+            .help("Stop without saving any progress")
+            .accessibilityLabel("Cancel session without saving")
             .accessibilityIdentifier("focus.stop")
         }
         // SwiftUI-native haptic feedback (macOS 14+). Three triggers cover the
@@ -542,7 +564,7 @@ struct FocusSetupCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Duration")
-                    .font(.caption.weight(.semibold))
+                    .font(CozyType.captionStrong)
                     .foregroundStyle(.secondary)
                 CozyDurationPicker(
                     minutes: $customMinutes,
@@ -564,7 +586,7 @@ struct FocusSetupCard: View {
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(pendingBoost.rarity.rawValue) boost")
-                        .font(.caption.weight(.semibold))
+                        .font(CozyType.captionStrong)
                         .foregroundStyle(CozyPalette.catalogColor(pendingBoost.rarity.colorHex))
                     Text(pendingBoost.title)
                         .font(CozyType.rowTitle)
@@ -670,7 +692,7 @@ struct FocusRunningCompanionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 RarityIcon(symbol: phaseSymbol, rarity: boost.rarity, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(phase.label)
@@ -768,12 +790,12 @@ struct FocusRunningRewardForecast: View {
             .frame(width: 72, height: 72)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(isEligible ? "Earning on save" : "Saves at 5 min")
-                    .font(.caption.weight(.semibold))
+                Text(isEligible ? "Earning now" : "Keep going — paws unlock at 5 min")
+                    .font(CozyType.captionStrong)
                     .foregroundStyle(.secondary)
                 Text(isEligible
                     ? "+\(pawForecast) paws · \(xpPreview) XP"
-                    : "Reward locks in soon")
+                    : "Almost there — keep going")
                     .font(CozyType.controlStrong)
                     .foregroundStyle(CozyPalette.focusJade)
                     .contentTransition(reduceMotion ? .identity : .numericText())
@@ -913,6 +935,52 @@ struct FocusMilestoneBeads: View {
     }
 }
 
+// PawAwardPop — KeyframeAnimator pop on the paw pill when coinsAvailable
+// increments. Three tracks: scale, rotation, vertical drift.
+private struct PawAwardPop: ViewModifier {
+    let trigger: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct AnimValues {
+        var scale: Double = 1.0
+        var rotation: Double = 0.0
+        var offsetY: Double = 0.0
+    }
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content
+                .keyframeAnimator(initialValue: AnimValues(), trigger: trigger) { view, values in
+                    view
+                        .scaleEffect(values.scale)
+                        .rotationEffect(.degrees(values.rotation))
+                        .offset(y: values.offsetY)
+                } keyframes: { _ in
+                    KeyframeTrack(\.scale) {
+                        SpringKeyframe(1.4, duration: 0.15)
+                        SpringKeyframe(1.0, duration: 0.25)
+                    }
+                    KeyframeTrack(\.rotation) {
+                        LinearKeyframe(-8.0, duration: 0.12)
+                        SpringKeyframe(0.0, duration: 0.2)
+                    }
+                    KeyframeTrack(\.offsetY) {
+                        LinearKeyframe(-12.0, duration: 0.15)
+                        SpringKeyframe(0.0, duration: 0.3)
+                    }
+                }
+        }
+    }
+}
+
+private extension View {
+    func pawAwardPop(trigger: Bool) -> some View {
+        modifier(PawAwardPop(trigger: trigger))
+    }
+}
+
 // PawCounterPill — persistent paw-total badge overlaid on the timer ring
 // (top-trailing corner). Pulses its border when the paw count increments,
 // gated by Reduce Motion (AM-001). Shows live coinsAvailable which is the
@@ -922,10 +990,12 @@ private struct PawCounterPill: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
     @State private var pulse = false
+    @State private var popTrigger = false
 
     private var theme: CozyTheme { CozyTheme.named(selectedTheme) }
 
     var body: some View {
+        let strokeColor: Color = pulse && !reduceMotion ? CozyPalette.wasabi.opacity(0.72) : theme.reward.opacity(0.22)
         Label("\(dataStore.progression.coinsAvailable)", systemImage: "pawprint.fill")
             .font(CozyType.captionStrong)
             .foregroundStyle(theme.reward)
@@ -936,14 +1006,14 @@ private struct PawCounterPill: View {
                     .fill(theme.reward.opacity(0.12))
                     .overlay(
                         Capsule(style: .continuous)
-                            .stroke(
-                                pulse && !reduceMotion ? CozyPalette.wasabi.opacity(0.72) : theme.reward.opacity(0.22),
-                                lineWidth: 1.5
-                            )
+                            .stroke(strokeColor, lineWidth: 1.5)
                     )
             )
+            .pawAwardPop(trigger: popTrigger)
+            .accessibilityLabel("Paws: \(dataStore.progression.coinsAvailable)")
             .onChange(of: dataStore.progression.coinsAvailable) { _, _ in
                 guard !reduceMotion else { return }
+                popTrigger.toggle()
                 pulse = true
                 withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.9)) { pulse = false }
             }
@@ -1170,6 +1240,154 @@ enum FocusRewardResolver {
     }
 }
 
+// MARK: - FocusRingAura
+
+/// Ambient MeshGradient circle behind CozyTimerChrome. Opacity rises from
+/// 0.12 (prepare) → 0.45 (deepFocus) so the ring gains a warm halo as the
+/// user settles into concentration. 5 fps keeps CPU cost minimal.
+/// Reduce Motion: static RadialGradient fallback, no animation.
+private struct FocusRingAura: View {
+    let phase: FocusPhase
+    let accent: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var targetOpacity: Double {
+        switch phase {
+        case .prepare:                 return 0.12
+        case .settling:                return 0.28
+        case .deepFocus, .finalMinute: return 0.45
+        case .wrap, .breakTime:        return 0.18
+        }
+    }
+
+    var body: some View {
+        auraLayer
+            .frame(width: 248, height: 248)
+            .clipShape(Circle())
+            .opacity(targetOpacity)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 1.2), value: targetOpacity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var auraLayer: some View {
+        if reduceMotion {
+            Circle().fill(
+                RadialGradient(
+                    colors: [accent.opacity(0.55), accent.opacity(0.0)],
+                    center: .center, startRadius: 0, endRadius: 124
+                )
+            )
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 5.0)) { ctx in
+                animatedAura(t: ctx.date.timeIntervalSince1970)
+            }
+        }
+    }
+
+    private func animatedAura(t: Double) -> some View {
+        let w: Double = 2 * .pi / 6
+        let a: Float  = 0.06
+        let cx = 0.5 + Float(sin(t * w)) * a
+        let cy = 0.5 + Float(cos(t * w + 1.6)) * a
+        return MeshGradient(
+            width: 3, height: 3,
+            points: [
+                [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
+                [0.0, 0.5], [cx,  cy  ], [1.0, 0.5],
+                [0.0, 1.0], [0.5, 1.0], [1.0, 1.0]
+            ],
+            colors: [
+                .clear,               accent.opacity(0.10), .clear,
+                accent.opacity(0.10), accent.opacity(0.70), accent.opacity(0.10),
+                .clear,               accent.opacity(0.10), .clear
+            ],
+            background: .clear,
+            smoothsColors: true
+        )
+    }
+}
+
+// CozyConfettiBurst — native SwiftUI one-shot confetti overlay for session
+// completion. Uses TimelineView + Canvas; no external dependency. 30 pieces
+// burst from the top-center, arc outward, fall with gravity, and fade.
+// Self-dismisses after 2.4 s. Caller gates by reduceMotion before inserting.
+private struct CozyConfettiBurst: View {
+    private struct Piece: Identifiable {
+        let id: Int
+        let color: Color
+        let vx: Double    // normalised horizontal velocity (-1…1)
+        let vy: Double    // normalised initial upward velocity
+        let vr: Double    // rotation speed deg/s
+        let w, h: Double  // piece dimensions
+        let startDelay: Double
+    }
+
+    private static let palette: [Color] = [
+        Color(hex: "#FFB4A2"), Color(hex: "#DDD6F3"),
+        Color(hex: "#B4D4E7"), Color(hex: "#D9F06A"),
+        Color(hex: "#F7C5A0"), Color(hex: "#C9E8FF")
+    ]
+
+    private let pieces: [Piece] = (0..<32).map { i in
+        let colors = CozyConfettiBurst.palette
+        return Piece(
+            id: i,
+            color: colors[i % colors.count],
+            vx: Double.random(in: -1.0...1.0),
+            vy: Double.random(in: 0.6...1.2),
+            vr: Double.random(in: -360...360),
+            w: Double.random(in: 8...14),
+            h: Double.random(in: 5...9),
+            startDelay: Double.random(in: 0...0.25)
+        )
+    }
+
+    @State private var startDate: Date = .now
+    @State private var visible = true
+
+    var body: some View {
+        if visible {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+                let elapsed = ctx.date.timeIntervalSince(startDate)
+                Canvas { context, size in
+                    for piece in pieces {
+                        let t = max(0, elapsed - piece.startDelay)
+                        guard t > 0 else { continue }
+                        // physics: x linear, y parabolic (gravity), fade after 1.4s
+                        let x = size.width * 0.5 + piece.vx * t * size.width * 0.45
+                        let y = size.height * 0.08 - piece.vy * t * size.height * 0.6
+                              + 0.5 * 420 * t * t   // gravity constant
+                        let alpha = max(0, 1 - (t - 1.0) / 0.8)
+                        guard alpha > 0 && y < size.height + 20 else { continue }
+                        let angle = Angle.degrees(piece.vr * t)
+                        var ctx2 = context
+                        ctx2.opacity = alpha
+                        ctx2.translateBy(x: x, y: y)
+                        ctx2.rotate(by: angle)
+                        ctx2.fill(
+                            Path(CGRect(x: -piece.w / 2, y: -piece.h / 2,
+                                        width: piece.w, height: piece.h)
+                                    .applying(.init(translationX: 0, y: 0))),
+                            with: .color(piece.color)
+                        )
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+            .onAppear {
+                startDate = .now
+                Task {
+                    try? await Task.sleep(for: .seconds(2.4))
+                    visible = false
+                }
+            }
+        }
+    }
+}
+
 struct FocusCompletionReview: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var dataStore: AppDataStore
@@ -1183,6 +1401,7 @@ struct FocusCompletionReview: View {
     @State private var presentingUnlockSheet = false
     @State private var showStamp = false
     @State private var rewardPulse = false
+    @State private var showConfetti = false
     @FocusState private var reflectionFocused: Bool
 
     private var theme: CozyTheme {
@@ -1213,10 +1432,11 @@ struct FocusCompletionReview: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.4)))
                     .allowsHitTesting(false)
             }
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 MascotView(state: .complete, size: .avatar)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(summary.isRewardEligible ? "Soft win saved" : "Partial focus saved")
+                    Text(summary.isRewardEligible ? "Mochi's proud of that one." : "Saved — even a small start counts")
                         .font(CozyType.cardTitle)
                     Text(summary.taskTitle)
                         .font(CozyType.body)
@@ -1249,7 +1469,7 @@ struct FocusCompletionReview: View {
                     .transition(.opacity)
             }
 
-            TextField("Optional note: what moved forward?", text: $reflection, axis: .vertical)
+            TextField("What did Mochi help you get done?", text: $reflection, axis: .vertical)
                 .accessibilityIdentifier("focus.reflection")
                 .lineLimit(2, reservesSpace: true)
                 .cozyTextInput(minHeight: 62, alignment: .topLeading)
@@ -1271,6 +1491,14 @@ struct FocusCompletionReview: View {
             }
         }
         .cozyCard()
+        .overlay(alignment: .top) {
+            if showConfetti {
+                CozyConfettiBurst()
+                    .frame(maxWidth: .infinity, maxHeight: 320)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Focus completion review")
         .sheet(isPresented: $presentingUnlockSheet) {
@@ -1294,6 +1522,7 @@ struct FocusCompletionReview: View {
             presentingUnlockSheet = false
             showStamp = false
             rewardPulse = false
+            showConfetti = false
             reflectionFocused = true
             if reduceMotion {
                 revealStep = 2
@@ -1303,6 +1532,7 @@ struct FocusCompletionReview: View {
                 // Apple now recommends for new code.
                 try? await Task.sleep(for: .milliseconds(180))
                 withAnimation(CozyMotion.spring(reduceMotion, response: 0.25, damping: 0.6)) { showStamp = true }
+                if summary.isRewardEligible { showConfetti = true }
                 CozyFeedback.play(.reward)
                 try? await Task.sleep(for: .milliseconds(600))
                 withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.3)) { showStamp = false }
@@ -1456,7 +1686,7 @@ struct CozyUnlockSheet: View {
             .frame(width: 220, height: 220)
 
             VStack(spacing: 6) {
-                Text(stage == .revealed ? (result.reward?.name ?? "Bonus paws") : "Tap to open")
+                Text(stage == .revealed ? (result.reward?.name ?? "Bonus paws") : "Tap the gift to peek inside")
                     .font(CozyType.cardTitle)
                     .foregroundStyle(CozyPalette.primaryText(colorScheme))
                     .multilineTextAlignment(.center)
@@ -1478,7 +1708,7 @@ struct CozyUnlockSheet: View {
                 .opacity(stage == .revealed ? 1 : 0.6)
 
             Button(action: dismiss) {
-                Label(stage == .revealed ? "Add to room" : "Tap the gift",
+                Label(stage == .revealed ? "Take it to the room" : "Tap the gift",
                       systemImage: stage == .revealed ? "sparkles" : "hand.tap.fill")
                     .frame(maxWidth: .infinity)
             }
@@ -1804,6 +2034,7 @@ struct MenuBarPanelView: View {
     private var menuBarHeroIdentity: some View {
         HStack(alignment: .top, spacing: 12) {
             MascotView(state: menuBarMascotState, size: .avatar)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(menuBarHeadline)
                     .font(CozyType.cardTitle)
@@ -1925,12 +2156,18 @@ struct MenuBarPanelView: View {
                             .lineLimit(2)
                     }
                 } else {
-                    Text("No focus saved today")
-                        .font(CozyType.body.weight(.semibold))
-                    Text("Completed sessions will appear here, in Stats, and on the Calendar.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                    HStack(spacing: 10) {
+                        MascotView(state: .idle, size: .inline)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("No focus saved today")
+                                .font(CozyType.body.weight(.semibold))
+                            Text("Finish a session and Mochi will log it here.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
                 }
             }
         }
@@ -1940,7 +2177,7 @@ struct MenuBarPanelView: View {
     private var quickCaptureCard: some View {
         MenuBarSurface {
             VStack(alignment: .leading, spacing: 9) {
-                Label("Capture", systemImage: "plus.bubble.fill")
+                Label("Add task", systemImage: "plus.bubble.fill")
                     .font(CozyType.controlStrong)
                 HStack(spacing: 8) {
                     TextField("Task or focus title", text: $quickTask)
@@ -2000,7 +2237,7 @@ struct MenuBarPanelView: View {
             Button {
                 completeMenuBarFocus()
             } label: {
-                Label("Save session", systemImage: "tray.and.arrow.down.fill")
+                Label("Save this win", systemImage: "tray.and.arrow.down.fill")
                     .frame(maxWidth: .infinity)
             }
             .cozySecondaryButton(fullWidth: true)

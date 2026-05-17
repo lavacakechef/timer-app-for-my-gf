@@ -153,7 +153,16 @@ struct UpcomingView: View {
             VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
                 SectionHeader(title: "Upcoming", subtitle: "A calm look at what is next.", mascotState: .countdown)
                 QuickAddBar(defaultDueDate: Calendar.autoupdatingCurrent.date(byAdding: .day, value: 1, to: Date()))
-                TaskList(tasks: upcomingTasks)
+                if upcomingTasks.isEmpty {
+                    EmptyStateView(
+                        title: "All clear ahead",
+                        message: "Add a due date to any task and it'll show up here.",
+                        mascotState: .countdown
+                    )
+                    .padding(.top, CozyLayout.formRowSpacing)
+                } else {
+                    TaskList(tasks: upcomingTasks)
+                }
             }
             .cozyPageFrame()
         }
@@ -219,7 +228,7 @@ struct TasksView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
-                SectionHeader(title: "Tasks", subtitle: "Lists, tags, priorities, and soft deadlines.", mascotState: .idle)
+                SectionHeader(title: "Tasks", subtitle: "Keep everything in one calm spot.", mascotState: .idle)
                 QuickAddBar(defaultDueDate: timeFilter == .upcoming
                     ? Calendar.autoupdatingCurrent.date(byAdding: .day, value: 1, to: Date())
                     : nil)
@@ -382,9 +391,9 @@ struct QuickAddBar: View {
             title: "Task",
             symbolName: "checklist",
             minWidth: 220,
-            hint: cleanTitle.isEmpty ? "Type a task title to add it." : nil
+            hint: cleanTitle.isEmpty ? "What's the next small thing?" : nil
         ) {
-            TextField("Add a tiny task...", text: $title)
+            TextField("What's the next tiny thing?", text: $title)
                 .onSubmit(addTask)
                 .focused($initialFocus, equals: .title)
                 .accessibilityIdentifier("quickAdd.title")
@@ -1462,6 +1471,12 @@ struct TaskRow: View {
             }
         }
         .cozyCard()
+        .scrollTransition(axis: .vertical) { content, phase in
+            content
+                .opacity(phase.isIdentity ? 1 : 0.7)
+                .scaleEffect(phase.isIdentity ? 1 : 0.97)
+                .offset(y: phase.isIdentity ? 0 : 5)
+        }
         .accessibilityIdentifier("task.row")
         // UX HIGH #84 — right-click / secondary-click context menu on each
         // task surfaces the same actions that already live behind icon
@@ -1669,7 +1684,7 @@ struct TaskRow: View {
 
     private func completionFeedback(wasCompleted: Bool) -> some View {
         HStack(spacing: 8) {
-            Label(wasCompleted ? "Nice finish logged" : "Moved back to active", systemImage: wasCompleted ? "sparkles" : "arrow.uturn.backward")
+            Label(wasCompleted ? "Done! Mochi clapped for that one." : "Moved back to active", systemImage: wasCompleted ? "sparkles" : "arrow.uturn.backward")
                 .lineLimit(1)
             Spacer()
             Button("Undo") {

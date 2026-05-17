@@ -15,7 +15,7 @@ struct CountdownsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
-                SectionHeader(title: "Countdowns", subtitle: "Make deadlines and sweet events visible.", mascotState: .countdown)
+                SectionHeader(title: "Countdowns", subtitle: "Turn future moments into things to look forward to.", mascotState: .countdown)
 
                 countdownComposer
 
@@ -958,8 +958,8 @@ struct CountdownPrepPrompt: View {
                     .foregroundStyle(.secondary)
                 if didAddTask {
                     Text("Prep task added")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.green)
+                        .font(CozyType.captionStrong)
+                        .foregroundStyle(CozyPalette.focusJade)
                         .transition(.opacity)
                 }
             }

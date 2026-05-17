@@ -6,6 +6,7 @@ import SwiftUI
 
 struct HabitsView: View {
     @EnvironmentObject private var dataStore: AppDataStore
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
     @State private var newHabitTitle = ""
     @State private var targetPerWeek = 4
@@ -66,7 +67,7 @@ struct HabitsView: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Capsule().fill(.quaternary))
+                        .background(Capsule().fill(CozyPalette.quietContainer(colorScheme)))
 
                         Button {
                             addHabit()
@@ -81,7 +82,7 @@ struct HabitsView: View {
                     }
 
                     if cleanHabitTitle.isEmpty {
-                        Text("Name the habit first.")
+                        Text("Give it a name first — anything gentle counts")
                             .font(CozyType.caption)
                             .foregroundStyle(.secondary)
                             .padding(.leading, 4)
@@ -206,14 +207,22 @@ struct HabitCard: View {
                             // Visible circle bumped 20→28pt so the clickable
                             // affordance matches WCAG 2.5.8 (24pt minimum
                             // visible target). 44pt hit area preserved below.
-                            Circle()
-                                .fill(isDone ? CozyHabitColor.primary : CozyPalette.lavenderMist)
-                                .overlay(
-                                    Circle()
-                                        .stroke(isToday ? CozyHabitColor.primary : CozyHabitColor.primary.opacity(0.28),
-                                                lineWidth: isToday ? 2 : 1)
-                                )
-                                .frame(width: 28, height: 28)
+                            ZStack {
+                                Circle()
+                                    .fill(isDone ? CozyHabitColor.primary : CozyPalette.lavenderMist)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(isToday ? CozyHabitColor.primary : CozyHabitColor.primary.opacity(0.28),
+                                                    lineWidth: isToday ? 2 : 1)
+                                    )
+                                if isDone {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .symbolEffect(.bounce.down.byLayer, options: .nonRepeating, value: isDone)
+                                }
+                            }
+                            .frame(width: 28, height: 28)
                         }
                         .frame(width: CozyLayout.hitSize, height: CozyLayout.hitSize)
                     }
@@ -336,7 +345,10 @@ struct HabitCard: View {
         dataStore.toggleHabit(id: habit.id, at: day)
         CozyFeedback.play(wasComplete ? .undo : .complete)
         withAnimation(CozyMotion.snappy(reduceMotion, duration: 0.18)) {
-            habitFeedback = wasComplete ? "Check removed" : "+8 XP rhythm"
+            habitFeedback = wasComplete ? "Unchecked — no worries" : "+8 XP rhythm"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation(CozyMotion.gentle(reduceMotion, duration: 0.25)) { habitFeedback = nil }
         }
     }
 }
@@ -489,7 +501,7 @@ struct TodayHabitCard: View {
     }
 
     private var titleText: String {
-        dataStore.habits.isEmpty ? "No habits yet" : "\(completedToday) / \(dataStore.habits.count) done today"
+        dataStore.habits.isEmpty ? "Start a gentle habit" : "\(completedToday) / \(dataStore.habits.count) done today"
     }
 
     private var subtitleText: String {
@@ -592,14 +604,14 @@ struct StatsView: View {
             VStack(alignment: .leading, spacing: CozyLayout.sectionSpacing) {
                 SectionHeader(
                     title: "Stats",
-                    subtitle: "Progress without shame metrics.",
+                    subtitle: "Your soft receipts — no judgment, just patterns.",
                     mascotState: totalFocusMinutes == 0 ? .idle : .complete
                 )
                 LazyVGrid(columns: CozyLayout.metricColumns, spacing: CozyLayout.gridSpacing) {
                     StatCard(title: "Focus time", value: "\(totalFocusMinutes)m", symbol: "timer", color: CozyPalette.focusJade)
                     StatCard(title: "Tasks complete", value: "\(completedTasks)", symbol: "checkmark.circle.fill", color: CozyPalette.berry)
                     StatCard(title: "Habits today", value: "\(completedHabitsToday)/\(dataStore.habits.count)", symbol: "sparkles", color: CozyHabitColor.primary)
-                    StatCard(title: "Mochi level", value: "\(dataStore.progression.level)", symbol: "pawprint.fill", color: theme.reward)
+                    StatCard(title: "Mochi's level", value: "\(dataStore.progression.level)", symbol: "pawprint.fill", color: theme.reward)
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -612,12 +624,17 @@ struct StatsView: View {
                                 y: .value("Minutes", item.minutes)
                             )
                             .foregroundStyle(CozyStatsColor.focus)
+                            .cornerRadius(4)
                         }
                         .chartYAxisLabel("Minutes")
+                        .chartXAxis {
+                            AxisMarks { AxisValueLabel().font(CozyType.caption) }
+                        }
 
                         if totalFocusMinutes == 0 {
                             VStack(spacing: 10) {
                                 MascotView(state: .settling, size: .card)
+                                    .accessibilityHidden(true)
                                 Text("Save one focus to start tracking")
                                     .font(CozyType.rowTitle)
                                 // CTA goes to Focus, not Rewards — generating
@@ -687,6 +704,9 @@ struct FocusChartItem: Identifiable {
 struct WeeklyDigestCard: View {
     @EnvironmentObject private var dataStore: AppDataStore
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("selectedTheme") private var selectedTheme = CozyTheme.defaultName
+
+    private var theme: CozyTheme { CozyTheme.named(selectedTheme) }
 
     var body: some View {
         let summary = digest
@@ -694,10 +714,10 @@ struct WeeklyDigestCard: View {
         HStack(alignment: .center, spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(CozyPalette.focusJade.opacity(0.16))
+                    .fill(theme.accent.opacity(0.16))
                 Image(systemName: "calendar.badge.clock")
                     .font(CozyType.cardTitle)
-                    .foregroundStyle(CozyPalette.focusJade)
+                    .foregroundStyle(theme.accent)
             }
             .frame(width: 48, height: 48)
 
@@ -849,12 +869,12 @@ struct StatCard: View {
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: symbol)
-                .font(.title)
+                .font(CozyType.cardTitle)
                 .foregroundStyle(color)
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(CozyType.captionStrong)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.86)
@@ -1038,7 +1058,7 @@ struct LatestUnlockStrip: View {
     private var latestUnlockLabel: some View {
         Label("Latest unlocks", systemImage: "gift.fill")
             .font(CozyType.rowTitle)
-            .foregroundStyle(CozyPalette.focusJade)
+            .foregroundStyle(theme.reward)
     }
 
     private func latestUnlockChip(_ reward: RewardItem) -> some View {
@@ -1101,6 +1121,7 @@ struct DeskRoomMiniCard: View {
                         Circle()
                             .fill(CozyPalette.quietContainer(colorScheme))
                         EquippedMascotView(state: .idle, size: .avatar, rewards: dataStore.rewards)
+                            .accessibilityHidden(true)
                     }
                     .frame(width: 70, height: 70)
                     .overlay(alignment: .topTrailing) {
@@ -1153,7 +1174,7 @@ struct DeskRoomMiniCard: View {
             }
             .frame(width: 32, height: 32)
 
-            Text("More coming soon · keep stacking paws")
+            Text("Mochi has more surprises brewing — keep earning paws")
                 .font(CozyType.captionStrong)
                 .foregroundStyle(CozyPalette.secondaryText(colorScheme))
                 .lineLimit(2)
@@ -1221,25 +1242,31 @@ struct DeskRoomScene: View {
                     )
 
                 VStack(spacing: 0) {
-                    HStack(alignment: .top, spacing: 10) {
-                        ForEach(visibleRewards.prefix(4)) { reward in
-                            // Uniform 40pt across the row — earlier emphasis-on-first (42 vs 34)
-                            // read as a non-uniform alignment bug rather than a deliberate
-                            // hierarchy cue.
-                            RoomRewardIcon(reward: reward, size: 40)
+                    if visibleRewards.isEmpty {
+                        VStack(spacing: 10) {
+                            MascotView(state: .idle, size: .card)
+                                .frame(maxWidth: .infinity)
+                                .accessibilityHidden(true)
+                            Text("Save your first focus and Mochi starts decorating")
+                                .font(CozyType.rowTitle)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.secondary)
                         }
+                        .padding(20)
+                    } else {
+                        HStack(alignment: .top, spacing: 10) {
+                            ForEach(visibleRewards.prefix(4)) { reward in
+                                RoomRewardIcon(reward: reward, size: 40)
+                            }
+                            Spacer()
+                            Image(systemName: "lightbulb.led.fill")
+                                .font(.title.weight(.bold))
+                                .frame(width: 40, height: 40)
+                                .foregroundStyle(CozyPalette.wasabi.opacity(0.86))
+                        }
+                        .padding(16)
                         Spacer()
-                        // Visual audit CRITICAL #2: bare title-sized image had
-                        // a higher baseline than the surrounding 40pt circles,
-                        // so the lightbulb floated above the row. Pinning to a
-                        // 40pt square frame matches the reward icon column.
-                        Image(systemName: "lightbulb.led.fill")
-                            .font(.title.weight(.bold))
-                            .frame(width: 40, height: 40)
-                            .foregroundStyle(CozyPalette.wasabi.opacity(visibleRewards.isEmpty ? 0.28 : 0.86))
                     }
-                    .padding(16)
-                    Spacer()
                 }
 
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -1254,6 +1281,7 @@ struct DeskRoomScene: View {
                 // leaving a giant empty middle.
                 HStack(alignment: .center, spacing: 16) {
                     EquippedMascotView(state: dataStore.progression.level > 1 ? .complete : .idle, size: .card, rewards: dataStore.rewards)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(dataStore.progression.petStage.rawValue)
                             .font(CozyType.captionStrong)
@@ -1474,7 +1502,7 @@ struct ShopItemCard: View {
                 .accessibilityIdentifier("shop.buy.\(item.id)")
                 Spacer()
                 Text("Lv. \(item.requiredLevel)")
-                    .font(.caption.weight(.semibold))
+                    .font(CozyType.captionStrong)
                     .foregroundStyle(.secondary)
             }
 
@@ -1636,9 +1664,7 @@ struct RewardCard: View {
                 .help(reward.isEquipped ? "Already active" : "Equip this cosmetic")
                 .accessibilityIdentifier("inventory.equip.\(reward.id.uuidString)")
             } else {
-                Text("Collected")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                CozyPill(title: "Collected", symbolName: "checkmark", intent: .success, size: .small)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 224, alignment: .top)
@@ -1901,7 +1927,7 @@ struct SettingsScreen: View {
                     Label("Data stays on this Mac. There are no accounts, network sync, or tracking.", systemImage: "lock.shield.fill")
                         .foregroundStyle(.secondary)
                     Label("Unsigned install can require right-click Open or Privacy & Security approval.", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(CozyPalette.overdue)
+                        .foregroundStyle(.secondary)
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 10) {
                             dataActionButtons
@@ -2197,7 +2223,7 @@ struct SettingsGroup<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(CozyType.cardTitle)
@@ -2205,10 +2231,14 @@ struct SettingsGroup<Content: View>: View {
                     .font(CozyType.body)
                     .foregroundStyle(.secondary)
             }
+            .padding(.bottom, 12)
+
+            Divider().opacity(0.4)
 
             VStack(alignment: .leading, spacing: 12) {
                 content
             }
+            .padding(.top, 12)
         }
         .cozyCard()
     }
