@@ -14,6 +14,9 @@ if [[ ! -d CozyTime.xcodeproj ]]; then
   scripts/generate_xcode_project.sh
 fi
 
+scripts/sync_licensed_assets.sh
+scripts/import_opentoonz_art_pack.sh
+
 if [[ "${COZYTIME_SKIP_RELEASE_GATE:-0}" != "1" ]]; then
   scripts/run_xcode_release_gate.sh
 fi

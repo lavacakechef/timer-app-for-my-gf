@@ -11,3 +11,11 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 *.zip
+
+# Restricted third-party mascot assets are private/local only.
+# Keep the folder shape and docs tracked, but never commit supplied artwork
+# or generated asset-catalog copies.
+ThirdPartyLicensed/Ghibli/*
+!ThirdPartyLicensed/Ghibli/.gitkeep
+!ThirdPartyLicensed/Ghibli/README.md
+XcodeSupport/CozyTime/Assets.xcassets/mascot.licensed*.imageset/

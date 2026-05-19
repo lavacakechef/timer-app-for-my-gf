@@ -104,7 +104,7 @@ struct FocusView: View {
 
         return VStack(spacing: 20) {
             FocusPhaseHeader(phase: phase, boost: activeBoostID.isEmpty ? nil : activeBoost)
-            MascotView(state: mascotState(for: phase), size: .hero)
+            EquippedMascotView(state: mascotState(for: phase), size: .hero, rewards: dataStore.rewards)
                 .accessibilityHidden(true)
                 .scaleEffect(max(petScale, pawReactScale))
                 .onTapGesture {

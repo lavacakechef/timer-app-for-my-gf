@@ -152,6 +152,33 @@ final class ProgressionTests: XCTestCase {
         XCTAssertEqual(duplicateRoll.duplicatePaws, 1)
     }
 
+    func testOpenToonzAssetBackedRewardsAreInCatalogs() throws {
+        let toonzRoll = CozyProgression.adventureRoll(seed: 300, completedMinutes: 25, existingRewards: [])
+        XCTAssertEqual(toonzRoll.reward?.name, "Toonz Candy")
+        XCTAssertEqual(toonzRoll.reward?.symbolName, "asset:opentoonz.candy")
+        XCTAssertEqual(CozyProgression.adventureRoll(seed: 500, completedMinutes: 25, existingRewards: []).reward?.symbolName, "asset:opentoonz.ball")
+        XCTAssertEqual(CozyProgression.adventureRoll(seed: 470, completedMinutes: 25, existingRewards: []).reward?.symbolName, "asset:opentoonz.bow")
+        XCTAssertEqual(CozyProgression.adventureRoll(seed: 392, completedMinutes: 25, existingRewards: []).reward?.symbolName, "asset:opentoonz.arc")
+        XCTAssertEqual(CozyProgression.adventureRoll(seed: 199, completedMinutes: 25, existingRewards: [], lifetimeSessionCount: CozyProgression.dreamPityThreshold).reward?.symbolName, "asset:opentoonz.flower4")
+
+        let bow = try XCTUnwrap(CozyProgression.shopCatalog.first { $0.id == "twinkle-bow" })
+        XCTAssertEqual(bow.symbolName, "asset:opentoonz.bow")
+
+        let requiredShopAssets = [
+            "asset:opentoonz.brush",
+            "asset:opentoonz.icecream",
+            "asset:opentoonz.frame",
+            "asset:opentoonz.spring",
+            "asset:opentoonz.fish2",
+            "asset:opentoonz.ladybird",
+            "asset:opentoonz.arc"
+        ]
+        let shopSymbols = Set(CozyProgression.shopCatalog.map(\.symbolName))
+        for symbol in requiredShopAssets {
+            XCTAssertTrue(shopSymbols.contains(symbol), "\(symbol) should be represented in the shop catalog")
+        }
+    }
+
     func testShopCatalogIncludesTimerCosmeticsAsCosmeticCoinSinks() {
         let timerSkins = CozyProgression.shopCatalog.filter { $0.category == "Timer skin" }
         let timerFrames = CozyProgression.shopCatalog.filter { $0.category == "Timer frame" }

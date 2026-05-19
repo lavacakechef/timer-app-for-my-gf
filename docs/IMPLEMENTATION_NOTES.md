@@ -91,6 +91,38 @@ bash scripts/fetch_mascot_lotties.sh
 
 The Noto emojis only ship a single idle loop per character, so every CozyTime mascot state resolves to `{character}-idle.json` for them — state distinction comes from the surrounding tint and accessory layer in `MascotView`.
 
+### Curated OpenToonz art pack
+
+The OpenToonz repository does not contain importable Studio Ghibli character
+art. CozyTime imports the BSD-licensed OpenToonz `custom styles` PNG pack:
+
+- `Toonz Buddy` and `Sunny Chick` mascot choices in Settings.
+- Every `custom styles/*.png` frame as `opentoonz.custom.{filename}` assets,
+  plus stable app-facing aliases such as `opentoonz.bow`,
+  `opentoonz.flower4`, and `opentoonz.arc`.
+- Image-backed reward/decor art for expanded shop and adventure-roll items.
+- `asset:{name}` reward symbols render through `CozyCatalogGlyph`, while
+  ordinary SF Symbol names still render normally.
+
+Run `scripts/import_opentoonz_art_pack.sh` after refreshing the local
+OpenToonz checkout. `scripts/generate_xcode_project.sh`,
+`scripts/run_xcode_release_gate.sh`, and `scripts/package_xcode_unsigned.sh`
+call it automatically when `.build/external/opentoonz` exists.
+
+### Restricted licensed mascot slot
+
+The Settings mascot picker includes a `Private Art` slot with style id
+`licensed`. It is intentionally generic in-app so private third-party approvals
+do not become public endorsement copy.
+
+Approved local PNGs can be placed under `ThirdPartyLicensed/Ghibli/` with names
+such as `mascot.licensed.idle.png`, `mascot.licensed.focus.png`, and
+`mascot.licensed.complete.png`. `scripts/sync_licensed_assets.sh` converts them
+into ignored asset-catalog imagesets. The approval note stays in the ignored
+source folder rather than being copied as a loose app-bundle resource.
+`scripts/package_xcode_unsigned.sh` and `scripts/run_xcode_release_gate.sh` run
+the sync step automatically before testing/archive.
+
 ## Known limitations (intentionally accepted)
 
 ### Habit weekly counts follow the system locale

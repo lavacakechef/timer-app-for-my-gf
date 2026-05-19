@@ -933,9 +933,11 @@ struct CountdownStickerFrame: View {
                     RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
                         .stroke(stickerColor.opacity(phase == .today ? 0.62 : 0.30), lineWidth: 1)
                 )
-            Image(systemName: event.stickerName)
-                .font(.title.weight(.bold))
-                .foregroundStyle(phase.isOverdue ? CozyPalette.overdue : stickerColor)
+            CozyCatalogGlyph(
+                symbolName: event.stickerName,
+                color: phase.isOverdue ? CozyPalette.overdue : stickerColor,
+                size: 28
+            )
         }
         .frame(width: 56, height: 56)
         .accessibilityHidden(true)

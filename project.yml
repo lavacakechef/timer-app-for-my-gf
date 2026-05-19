@@ -40,6 +40,8 @@ targets:
         buildPhase: resources
     resources:
       - path: Sources/CozyTime/Resources/PrivacyInfo.xcprivacy
+      - path: Sources/CozyTime/Resources/OpenToonzArt_LICENSE.txt
+        buildPhase: resources
       - path: Sources/CozyTime/Resources/Mascot
         buildPhase: resources
       - path: Sources/CozyTime/Resources/Sounds

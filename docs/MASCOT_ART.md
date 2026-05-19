@@ -2,7 +2,7 @@
 
 The vector mascots in `Sources/CozyTime/DesignSystem.swift` are a fallback. When you add raster art to `XcodeSupport/CozyTime/Assets.xcassets`, the app automatically picks it up — no Swift changes per mascot. The vector body runs only when no matching asset is found.
 
-This doc covers the three sourcing paths: **AI-generated**, **commissioned**, and **CC0 / public-domain**. Everything below targets **original artwork that you own (or that is freely licensed)** — directly reproducing trademarked characters like Labubu, Pompompurin, Snoopy, or other Sanrio / Pop Mart / Peanuts mascots is not part of any of these paths.
+This doc covers the three sourcing paths: **AI-generated**, **commissioned**, and **CC0 / public-domain**. Everything below targets **original artwork that you own (or that is freely licensed)** — directly reproducing trademarked characters like Labubu, Pompompurin, Snoopy, or other Sanrio / Pop Mart / Peanuts mascots is not part of any of these paths. If a rights holder separately supplies written approval for private mascot use, use the restricted local import path in section 7 instead of committing the files.
 
 ---
 
@@ -26,7 +26,7 @@ Add an imageset to `XcodeSupport/CozyTime/Assets.xcassets/` with one of these na
 2. `mascot.{styleID}.{category}` — coarser (e.g. `mascot.maltese.focus`)
 3. `mascot.{styleID}` — single fallback (e.g. `mascot.maltese`)
 
-**Style IDs in the current build:** `maltese`, `biscuit`, `tofu`, `bao`, `bramble`, `pip`, `yolk`, `soba`, `hazel`, `acorn`. Retired legacy IDs such as `mango` and `custard` fall back to Mochi.
+**Style IDs in the current build:** `maltese`, `biscuit`, `tofu`, `bao`, `bramble`, `pip`, `yolk`, `soba`, `hazel`, `acorn`, `toonz-buddy`, `toonz-chick`, `licensed`. Retired legacy IDs such as `mango` and `custard` fall back to Mochi.
 
 **State categories** (defined in `MascotState.categoryKey`):
 - `idle` — covers idle, countdown, overdue, breakTime
@@ -123,7 +123,61 @@ When using CC-BY or attribution-required artwork, add a single line to a new `do
 - mascot.mochi by [Artist Name] — https://link-to-original — CC-BY-4.0
 ```
 
-## 6. Smoke test
+## 6. Restricted licensed art path
+
+Use this only for files expressly approved by the asset rights holder for this
+private CozyTime mascot integration.
+
+1. Put approved local files under `ThirdPartyLicensed/Ghibli/`.
+2. Keep the rights note in `ThirdPartyLicensed/Ghibli/LICENSE_NOTES.md`.
+3. Name PNGs with the private mascot slot:
+   - `mascot.licensed.idle.png`
+   - `mascot.licensed.focus.png`
+   - `mascot.licensed.complete.png`
+   - optional exact states: `countdown`, `overdue`, `breakTime`, `settling`, `deepFocus`, `landing`
+4. Run:
+
+```bash
+scripts/sync_licensed_assets.sh
+scripts/generate_xcode_project.sh
+```
+
+The sync script generates ignored imagesets under
+`XcodeSupport/CozyTime/Assets.xcassets/mascot.licensed*.imageset/`. Generated
+imagesets are ignored by Git but are compiled into your private local app
+bundle. The approval note stays in the ignored `ThirdPartyLicensed/Ghibli/`
+folder. In the app, choose `Private Art` in Settings. The app intentionally
+does not display third-party brand names.
+
+## 7. OpenToonz curated art pack
+
+OpenToonz is not a Ghibli character asset library. The imported OpenToonz art is
+the BSD-licensed `custom styles` PNG pack used for secondary mascot choices and
+reward/decor icons.
+
+Run:
+
+```bash
+scripts/import_opentoonz_art_pack.sh
+```
+
+This creates:
+
+- `mascot.toonz-buddy.*`
+- `mascot.toonz-chick.*`
+- `opentoonz.custom.{filename}` for every `custom styles/*.png` frame.
+- stable aliases for app-facing items, including `opentoonz.arc`,
+  `opentoonz.ball`, `opentoonz.bow`, `opentoonz.brush`,
+  `opentoonz.bubbles`, `opentoonz.candy`, `opentoonz.fish2`,
+  `opentoonz.flower4`, `opentoonz.frame`, `opentoonz.icecream`,
+  `opentoonz.ladybird`, `opentoonz.leaf`, `opentoonz.orange`,
+  `opentoonz.spring`, `opentoonz.star`, `opentoonz.sunflower`, and
+  `opentoonz.umbrella`.
+
+These are compiled into `Assets.xcassets` and covered by
+`Sources/CozyTime/Resources/OpenToonzArt_LICENSE.txt`.
+
+## 8. Smoke test
 
 After adding any image:
 
@@ -144,6 +198,6 @@ If multiple styles ship art and you want users to switch, no extra code is neede
 
 ## What this design doesn't do (intentional)
 
-- **Doesn't recommend or facilitate reproduction of trademarked characters.** Even for private use, copying named characters (Labubu, Snoopy, Pompompurin, Hello Kitty, Pikachu, etc.) is a real liability the moment the build leaves your machine.
+- **Doesn't recommend or facilitate unlicensed reproduction of trademarked characters.** Even for private use, copying named characters (Labubu, Snoopy, Pompompurin, Hello Kitty, Pikachu, etc.) is a real liability the moment the build leaves your machine.
 - **Doesn't bundle any specific image in the repo.** Each user / fork sources their own art.
 - **Doesn't tie art to specific themes.** Swap themes and mascots independently.

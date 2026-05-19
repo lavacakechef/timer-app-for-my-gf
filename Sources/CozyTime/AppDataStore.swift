@@ -276,7 +276,6 @@ final class AppDataStore: ObservableObject {
             || category.localizedCaseInsensitiveContains("accessory")
             || category.localizedCaseInsensitiveContains("skin")
             || category.localizedCaseInsensitiveContains("timer frame")
-            || category.localizedCaseInsensitiveContains("room decor")
     }
 
     /// UX MED #98 — register a single-step undo. The closure runs on the

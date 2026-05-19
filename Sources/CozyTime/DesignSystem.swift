@@ -537,6 +537,8 @@ struct CozyMascotStyle: Identifiable, Equatable {
     // Legacy keys ("frog", "pudding", "mango", "custard") remain accepted
     // in `named(_:)` and the SwiftUI body switch so existing user defaults
     // don't crash — they just fall back to Mochi via the unknown-id branch.
+    // "licensed" is a local-only slot populated by scripts/sync_licensed_assets.sh.
+    // It intentionally avoids third-party brand names in the UI.
     static let all: [CozyMascotStyle] = [
         CozyMascotStyle(id: "maltese",  title: "Mochi",   subtitle: "Smiling shiba puppy",     symbolName: "pawprint.fill"),
         CozyMascotStyle(id: "biscuit",  title: "Biscuit", subtitle: "Orange study cat",        symbolName: "cat.fill"),
@@ -547,7 +549,10 @@ struct CozyMascotStyle: Identifiable, Equatable {
         CozyMascotStyle(id: "yolk",     title: "Yolk",    subtitle: "Front-facing chick",      symbolName: "bird"),
         CozyMascotStyle(id: "soba",     title: "Soba",    subtitle: "Cheek-puffing frog",      symbolName: "drop.fill"),
         CozyMascotStyle(id: "hazel",    title: "Hazel",   subtitle: "Soft fox",                symbolName: "leaf.fill"),
-        CozyMascotStyle(id: "acorn",    title: "Acorn",   subtitle: "Floating otter",          symbolName: "drop.circle.fill")
+        CozyMascotStyle(id: "acorn",    title: "Acorn",   subtitle: "Floating otter",          symbolName: "drop.circle.fill"),
+        CozyMascotStyle(id: "toonz-buddy", title: "Toonz Buddy", subtitle: "OpenToonz orange pal", symbolName: "sparkles"),
+        CozyMascotStyle(id: "toonz-chick", title: "Sunny Chick", subtitle: "OpenToonz chirpy helper", symbolName: "bird.fill"),
+        CozyMascotStyle(id: "licensed", title: "Private Art", subtitle: "Approved local set",   symbolName: "sparkles")
     ]
 
     /// Resolve a stored mascot id to a known style. Unknown ids (including
@@ -3204,11 +3209,12 @@ struct EquippedMascotView: View {
                 // MD-003: stickers hidden at < 80pt (avatar) per Discord/Apple Fitness pattern
                 if size >= 80 {
                     ForEach(Array(equippedWearables.enumerated()), id: \.element.id) { index, reward in
-                        Image(systemName: reward.symbolName)
-                            .font(.system(size: bodySize * 0.15, weight: .bold))
-                            // TC-002 OK: data-driven reward color, not a literal palette value
-                            .foregroundStyle(Color(hex: reward.colorHex))
-                            .padding(bodySize * 0.06)
+                        CozyCatalogGlyph(
+                            symbolName: reward.symbolName,
+                            color: Color(hex: reward.colorHex),
+                            size: bodySize * 0.19
+                        )
+                            .padding(bodySize * 0.045)
                             // TC-002 OK: data-driven reward color background
                             .background(Circle().fill(Color(hex: reward.colorHex).opacity(0.16)))
                             .offset(anchor(for: index).offset(for: bodySize))
@@ -3252,9 +3258,7 @@ struct NextUnlockView: View {
                 ZStack {
                     Circle()
                         .fill(Color(hex: item.colorHex).opacity(0.16))
-                    Image(systemName: item.symbolName)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(Color(hex: item.colorHex))
+                    CozyCatalogGlyph(symbolName: item.symbolName, color: Color(hex: item.colorHex), size: 20)
                 }
                 .frame(width: 38, height: 38)
 
@@ -3702,12 +3706,51 @@ struct RarityIcon: View {
                     RoundedRectangle(cornerRadius: CozyLayout.controlRadius, style: .continuous)
                         .stroke(Color(hex: rarity.colorHex).opacity(0.35), lineWidth: 1)
                 )
-            Image(systemName: symbol)
-                .font(.system(size: size * 0.42, weight: .bold))
-                .foregroundStyle(Color(hex: rarity.colorHex))
+            CozyCatalogGlyph(symbolName: symbol, color: Color(hex: rarity.colorHex), size: size * 0.48)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+    }
+}
+
+enum CozyCatalogSymbol {
+    private static let assetPrefix = "asset:"
+
+    static func assetName(for symbolName: String) -> String? {
+        guard symbolName.hasPrefix(assetPrefix) else { return nil }
+        let asset = String(symbolName.dropFirst(assetPrefix.count))
+        return asset.isEmpty ? nil : asset
+    }
+
+    static func systemName(for symbolName: String, fallback: String = "sparkles") -> String {
+        assetName(for: symbolName) == nil ? symbolName : fallback
+    }
+}
+
+struct CozyCatalogGlyph: View {
+    let symbolName: String
+    let color: Color
+    var size: CGFloat
+
+    var body: some View {
+        if let assetName = CozyCatalogSymbol.assetName(for: symbolName),
+           NSImage(named: assetName) != nil {
+            Image(assetName)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .shadow(color: .black.opacity(0.10), radius: size * 0.08, y: size * 0.04)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: CozyCatalogSymbol.systemName(for: symbolName))
+                .resizable()
+                .scaledToFit()
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(color, Color.white.opacity(0.85), color.opacity(0.6))
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
     }
 }
 
@@ -3762,12 +3805,9 @@ struct CozyItemArt: View {
             // 2. Category motif (behind the focal glyph)
             categoryMotif
 
-            // 3. Focal SF Symbol — palette mode with cream highlight tone
-            Image(systemName: symbolName)
-                .resizable().scaledToFit()
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(base, Color.white.opacity(0.85), base.opacity(0.6))
-                .frame(width: size * 0.52, height: size * 0.52)
+            // 3. Focal art — SF Symbol by default, bundled image when
+            // symbolName uses the `asset:{name}` convention.
+            CozyCatalogGlyph(symbolName: symbolName, color: base, size: size * 0.52)
                 .shadow(color: .white.opacity(0.55), radius: 2, y: -1)
                 .shadow(color: .black.opacity(0.12), radius: 5, y: 3)
 

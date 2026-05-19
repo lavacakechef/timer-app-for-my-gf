@@ -201,12 +201,42 @@ final class FocusTimerStoreTests: XCTestCase {
 
     func testTimerAndMascotPersonalizationCatalogsHaveStableDefaults() {
         XCTAssertEqual(CozyMascotStyle.named(CozyMascotStyle.defaultID).title, "Mochi")
-        let mascotIDs = ["maltese", "biscuit", "tofu", "bao", "bramble", "pip", "yolk", "soba", "hazel", "acorn"]
+        let mascotIDs = ["maltese", "biscuit", "tofu", "bao", "bramble", "pip", "yolk", "soba", "hazel", "acorn", "toonz-buddy", "toonz-chick", "licensed"]
         XCTAssertEqual(CozyMascotStyle.all.map(\.id), mascotIDs)
         XCTAssertEqual(CozyLottieMascot.lottiePrefix(forStyleID: "maltese"), "mochi")
         XCTAssertEqual(CozyLottieMascot.lottiePrefix(forStyleID: "biscuit"), "biscuit")
-        for id in mascotIDs.dropFirst(2) {
+        for id in ["tofu", "bao", "bramble", "pip", "yolk", "soba", "hazel", "acorn"] {
             XCTAssertEqual(CozyLottieMascot.lottiePrefix(forStyleID: id), id)
+        }
+        XCTAssertNil(CozyLottieMascot.lottiePrefix(forStyleID: "toonz-buddy"))
+        XCTAssertNil(CozyLottieMascot.lottiePrefix(forStyleID: "toonz-chick"))
+        XCTAssertNil(CozyLottieMascot.lottiePrefix(forStyleID: "licensed"))
+        XCTAssertEqual(MascotView.firstMatchingAsset(styleID: "toonz-buddy", state: .deepFocus), "mascot.toonz-buddy.focus")
+        XCTAssertEqual(MascotView.firstMatchingAsset(styleID: "toonz-chick", state: .complete), "mascot.toonz-chick.complete")
+        XCTAssertEqual(CozyCatalogSymbol.assetName(for: "asset:opentoonz.bow"), "opentoonz.bow")
+        XCTAssertEqual(CozyCatalogSymbol.systemName(for: "asset:opentoonz.bow"), "sparkles")
+        for assetName in [
+            "opentoonz.arc",
+            "opentoonz.ball",
+            "opentoonz.bow",
+            "opentoonz.brush",
+            "opentoonz.bubbles",
+            "opentoonz.candy",
+            "opentoonz.fish2",
+            "opentoonz.flower4",
+            "opentoonz.frame",
+            "opentoonz.icecream",
+            "opentoonz.ladybird",
+            "opentoonz.leaf",
+            "opentoonz.orange",
+            "opentoonz.spring",
+            "opentoonz.star",
+            "opentoonz.sunflower",
+            "opentoonz.umbrella",
+            "opentoonz.custom.dog.0001",
+            "opentoonz.custom.chick.0001"
+        ] {
+            XCTAssertNotNil(NSImage(named: assetName), "\(assetName) should be present in Assets.car")
         }
         XCTAssertNil(CozyLottieMascot.lottiePrefix(forStyleID: "mango"))
         XCTAssertNil(MascotView.firstMatchingAsset(styleID: "mango", state: .idle), "Retired style ids should not collapse to legacy generic mascot-idle art")

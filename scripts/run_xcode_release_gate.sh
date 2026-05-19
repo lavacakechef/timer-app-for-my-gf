@@ -14,6 +14,9 @@ if [[ ! -d CozyTime.xcodeproj ]]; then
   scripts/generate_xcode_project.sh
 fi
 
+scripts/sync_licensed_assets.sh
+scripts/import_opentoonz_art_pack.sh
+
 scripts/lint_design.sh
 
 xcodebuild \

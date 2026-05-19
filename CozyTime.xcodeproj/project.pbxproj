@@ -35,6 +35,7 @@
 		75CE2AC47BD9860D0C015C96 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39FB1A843C46D47C4851C45 /* Commands.swift */; };
 		7D991D24E6E8CB63E86DA3C4 /* CozyTimeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B959DF413925FFA1A540F6 /* CozyTimeUITests.swift */; };
 		7DC10BB36617652FE8C64154 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = E5E071DBBE546E4AF9C52ACB /* Lottie */; };
+		828743255FC1F6401EE4C695 /* OpenToonzArt_LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = F5258CAD52BE951607BBA6A3 /* OpenToonzArt_LICENSE.txt */; };
 		873673DA6E8CF6E9C18023FA /* biscuit-focus.json in Resources */ = {isa = PBXBuildFile; fileRef = 515939C58F66280FF021A32F /* biscuit-focus.json */; };
 		8A35FA3BDBEB16E0254813F2 /* LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = E97F843F8FF5EA7BB82A2AB2 /* LICENSE.txt */; };
 		8AA2D17B46EF12AF61B43057 /* SwiftDataAppDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D87DAC924338B79DF5719C /* SwiftDataAppDataStore.swift */; };
@@ -187,6 +188,7 @@
 		E97F843F8FF5EA7BB82A2AB2 /* LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE.txt; sourceTree = "<group>"; };
 		E9E760DC6F618A358F63FD5A /* biscuit-pause.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "biscuit-pause.json"; sourceTree = "<group>"; };
 		EA3A42914FABC12FAAA8C170 /* pip-idle.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "pip-idle.json"; sourceTree = "<group>"; };
+		F5258CAD52BE951607BBA6A3 /* OpenToonzArt_LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OpenToonzArt_LICENSE.txt; sourceTree = "<group>"; };
 		F60E15C4025EC992CE1B6555 /* ProgressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressionTests.swift; sourceTree = "<group>"; };
 		FA3F3D066B5C7D291D5EB5A1 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -313,6 +315,7 @@
 		C86FFCAB960CDA31729D3A18 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				F5258CAD52BE951607BBA6A3 /* OpenToonzArt_LICENSE.txt */,
 				693F00100566AF90D9C11787 /* PrivacyInfo.xcprivacy */,
 				CE789D4D136EB533A44EF3E1 /* Mascot */,
 				579D173A87C0494934ED78DE /* Sounds */,
@@ -532,6 +535,7 @@
 			files = (
 				0A8CD78314CD97A85C71DE84 /* Assets.xcassets in Resources */,
 				8A35FA3BDBEB16E0254813F2 /* LICENSE.txt in Resources */,
+				828743255FC1F6401EE4C695 /* OpenToonzArt_LICENSE.txt in Resources */,
 				C395BB028C0A8F8CE7C3074E /* PrivacyInfo.xcprivacy in Resources */,
 				C17D9797EB48F90AD447A489 /* acorn-idle.json in Resources */,
 				BE48EFFB5AC36AEE66614731 /* bao-idle.json in Resources */,

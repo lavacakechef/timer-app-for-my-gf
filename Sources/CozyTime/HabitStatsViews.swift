@@ -1123,10 +1123,18 @@ struct LatestUnlockStrip: View {
     }
 
     private func latestUnlockChip(_ reward: RewardItem) -> some View {
-        Label(reward.name, systemImage: reward.symbolName)
+        HStack(spacing: 8) {
+            CozyCatalogGlyph(
+                symbolName: reward.symbolName,
+                color: CozyPalette.catalogColor(reward.colorHex),
+                size: 18
+            )
+            Text(reward.name)
+                .font(CozyType.body.weight(.semibold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
             .font(CozyType.body.weight(.semibold))
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1189,9 +1197,7 @@ struct DeskRoomMiniCard: View {
                         ZStack {
                             Circle()
                                 .fill(theme.reward.opacity(0.18))
-                            Image(systemName: bestRoomSymbol)
-                                .font(CozyType.badge)
-                                .foregroundStyle(theme.rewardText(colorScheme))
+                            CozyCatalogGlyph(symbolName: bestRoomSymbol, color: theme.rewardText(colorScheme), size: 15)
                         }
                         .frame(width: 28, height: 28)
                         .offset(x: 4, y: -4)
@@ -1389,12 +1395,11 @@ struct RoomRewardIcon: View {
         ZStack {
             Circle()
                 .fill(CozyPalette.catalogColor(reward.colorHex).opacity(0.18))
-            Image(systemName: reward.symbolName)
-                .resizable()
-                .scaledToFit()
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(CozyPalette.catalogColor(reward.colorHex))
-                .frame(width: size * 0.48, height: size * 0.48)
+            CozyCatalogGlyph(
+                symbolName: reward.symbolName,
+                color: CozyPalette.catalogColor(reward.colorHex),
+                size: size * 0.58
+            )
         }
         .frame(width: size, height: size)
         .accessibilityLabel(reward.name)
@@ -1841,12 +1846,16 @@ struct SettingsScreen: View {
 
                     LazyVGrid(columns: CozyLayout.adaptiveColumns(minimum: 230), spacing: 10) {
                         ForEach(CozyMascotStyle.all) { style in
+                            let isAvailable = isMascotStyleAvailable(style)
                             Button {
-                                selectedMascotStyle = style.id
+                                if isAvailable {
+                                    selectedMascotStyle = style.id
+                                }
                             } label: {
-                                MascotStyleCard(style: style, isSelected: selectedMascotStyle == style.id)
+                                MascotStyleCard(style: style, isSelected: selectedMascotStyle == style.id, isAvailable: isAvailable)
                             }
                             .cozyPressable()
+                            .disabled(!isAvailable)
                             .accessibilityIdentifier("settings.mascot.\(style.id)")
                         }
                     }
@@ -2081,8 +2090,20 @@ struct SettingsScreen: View {
     }
 
     private func repairCosmeticSelectionsIfNeeded() {
+        normalizeUnavailableMascotSelection()
         repairTimerSkinSelectionIfNeeded()
         repairTimerShapeSelectionIfNeeded()
+    }
+
+    private func isMascotStyleAvailable(_ style: CozyMascotStyle) -> Bool {
+        style.id != "licensed" || MascotView.firstMatchingAsset(styleID: style.id, state: .idle) != nil
+    }
+
+    private func normalizeUnavailableMascotSelection() {
+        let selected = CozyMascotStyle.named(selectedMascotStyle)
+        if !isMascotStyleAvailable(selected) {
+            selectedMascotStyle = CozyMascotStyle.defaultID
+        }
     }
 
     private func repairTimerSkinSelectionIfNeeded() {
@@ -2155,6 +2176,7 @@ struct MascotStyleCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let style: CozyMascotStyle
     let isSelected: Bool
+    let isAvailable: Bool
 
     /// Render the actual mascot inside the picker tile so picking a style
     /// WYSIWYGs the choice. Falls back to the style's SF Symbol when Reduce
@@ -2163,7 +2185,17 @@ struct MascotStyleCard: View {
     /// distinguishes mascots in the static fallback.
     @ViewBuilder
     private var previewArt: some View {
-        if isSelected,
+        if !isAvailable {
+            Image(systemName: "lock.fill")
+                .font(CozyType.cardTitle)
+                .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+        } else if let assetName = MascotView.firstMatchingAsset(styleID: style.id, state: .idle) {
+            Image(assetName)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 48, height: 48)
+        } else if isSelected,
            !reduceMotion,
            let character = CozyLottieMascot.lottiePrefix(forStyleID: style.id),
            CozyLottieMascot.isBundled(character: character) {
@@ -2193,6 +2225,12 @@ struct MascotStyleCard: View {
                     .foregroundStyle(CozyPalette.secondaryText(colorScheme))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                if !isAvailable {
+                    Text("Add approved files first")
+                        .font(CozyType.captionStrong)
+                        .foregroundStyle(CozyPalette.secondaryText(colorScheme))
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
@@ -2207,13 +2245,14 @@ struct MascotStyleCard: View {
         .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
-                .fill(isSelected ? CozyPalette.selectionFill.opacity(colorScheme == .dark ? 0.16 : 0.62) : Color.primary.opacity(0.035))
+                .fill(isSelected ? CozyPalette.selectionFill.opacity(colorScheme == .dark ? 0.16 : 0.62) : Color.primary.opacity(isAvailable ? 0.035 : 0.020))
         )
         .overlay(
             RoundedRectangle(cornerRadius: CozyLayout.cardRadius, style: .continuous)
-                .stroke(isSelected ? CozyPalette.berry.opacity(0.42) : CozyPalette.cardBorder(colorScheme), lineWidth: 1)
+                .stroke(isSelected ? CozyPalette.berry.opacity(0.42) : CozyPalette.cardBorder(colorScheme).opacity(isAvailable ? 1 : 0.65), lineWidth: 1)
         )
         .accessibilityLabel(style.title)
+        .opacity(isAvailable ? 1 : 0.72)
     }
 }
 

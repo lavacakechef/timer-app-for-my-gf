@@ -172,12 +172,33 @@ public enum CozyProgression {
         AdventureCatalogEntry(rarity: .everyday, name: "Cloud Doodle", category: "Adventure sticker", symbolName: "cloud.fill", colorHex: "#8CB8D0"),
         AdventureCatalogEntry(rarity: .everyday, name: "Tiny Biscuit", category: "Care treat", symbolName: "circle.hexagongrid.fill", colorHex: "#FFD7B8"),
         AdventureCatalogEntry(rarity: .everyday, name: "Pencil Spark", category: "Adventure sticker", symbolName: "pencil.tip.crop.circle.fill", colorHex: "#DDEDE7"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Candy", category: "Adventure sticker", symbolName: "asset:opentoonz.candy", colorHex: "#F2AFC5"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Orange Slice", category: "Care treat", symbolName: "asset:opentoonz.orange", colorHex: "#FFD7B8"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Ball Bounce", category: "Adventure sticker", symbolName: "asset:opentoonz.ball", colorHex: "#8CB8D0"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Fruit Snack", category: "Care treat", symbolName: "asset:opentoonz.fruit", colorHex: "#FFD7B8"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Ice Cream", category: "Care treat", symbolName: "asset:opentoonz.icecream", colorHex: "#F2AFC5"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Pencil Mark", category: "Adventure sticker", symbolName: "asset:opentoonz.pencil", colorHex: "#DDEDE7"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Bubble Pop", category: "Adventure sticker", symbolName: "asset:opentoonz.bubbles", colorHex: "#8CB8D0"),
+        AdventureCatalogEntry(rarity: .everyday, name: "Toonz Rice Treat", category: "Care treat", symbolName: "asset:opentoonz.rice", colorHex: "#FFD7B8"),
         AdventureCatalogEntry(rarity: .cozy, name: "Mint Paw Charm", category: "Mascot accessory", symbolName: "pawprint.fill", colorHex: "#2F6F64"),
         AdventureCatalogEntry(rarity: .cozy, name: "Lofi Cushion", category: "Room decor", symbolName: "rectangle.inset.filled", colorHex: "#F2AFC5"),
         AdventureCatalogEntry(rarity: .cozy, name: "Peach Desk Snack", category: "Care treat", symbolName: "takeoutbag.and.cup.and.straw.fill", colorHex: "#FFD7B8"),
+        AdventureCatalogEntry(rarity: .cozy, name: "Toonz Leaf Charm", category: "Mascot accessory", symbolName: "asset:opentoonz.leaf", colorHex: "#2F6F64"),
+        AdventureCatalogEntry(rarity: .cozy, name: "Toonz Bow Charm", category: "Mascot accessory", symbolName: "asset:opentoonz.bow", colorHex: "#F2AFC5"),
+        AdventureCatalogEntry(rarity: .cozy, name: "Toonz Spring Toy", category: "Room decor", symbolName: "asset:opentoonz.spring", colorHex: "#8CB8D0"),
+        AdventureCatalogEntry(rarity: .cozy, name: "Toonz Ladybird Visit", category: "Room decor", symbolName: "asset:opentoonz.ladybird", colorHex: "#A8512D"),
+        AdventureCatalogEntry(rarity: .cozy, name: "Toonz Umbrella Nook", category: "Room decor", symbolName: "asset:opentoonz.umbrella", colorHex: "#8CB8D0"),
+        AdventureCatalogEntry(rarity: .cozy, name: "Toonz Domino Tile", category: "Adventure sticker", symbolName: "asset:opentoonz.domino", colorHex: "#6E4C77"),
+        AdventureCatalogEntry(rarity: .cozy, name: "Toonz Flower Note", category: "Adventure sticker", symbolName: "asset:opentoonz.flower", colorHex: "#F2AFC5"),
         AdventureCatalogEntry(rarity: .special, name: "Starry Bandana", category: "Mascot accessory", symbolName: "star.fill", colorHex: "#A8512D"),
         AdventureCatalogEntry(rarity: .special, name: "Moon Window", category: "Room decor", symbolName: "moon.stars.fill", colorHex: "#6E4C77"),
-        AdventureCatalogEntry(rarity: .dream, name: "Aurora Study Portal", category: "Room decor", symbolName: "sparkles", colorHex: "#496FA6")
+        AdventureCatalogEntry(rarity: .special, name: "Toonz Sunflower", category: "Room decor", symbolName: "asset:opentoonz.sunflower", colorHex: "#A8512D"),
+        AdventureCatalogEntry(rarity: .special, name: "Toonz Arc Window", category: "Room decor", symbolName: "asset:opentoonz.arc", colorHex: "#496FA6"),
+        AdventureCatalogEntry(rarity: .special, name: "Toonz Paint Brush", category: "Mascot accessory", symbolName: "asset:opentoonz.brush", colorHex: "#2F6F64"),
+        AdventureCatalogEntry(rarity: .special, name: "Toonz Fish Friend", category: "Room decor", symbolName: "asset:opentoonz.fish2", colorHex: "#8CB8D0"),
+        AdventureCatalogEntry(rarity: .dream, name: "Aurora Study Portal", category: "Room decor", symbolName: "sparkles", colorHex: "#496FA6"),
+        AdventureCatalogEntry(rarity: .dream, name: "Toonz Flower Portal", category: "Room decor", symbolName: "asset:opentoonz.flower4", colorHex: "#496FA6"),
+        AdventureCatalogEntry(rarity: .dream, name: "Toonz Starfall", category: "Room decor", symbolName: "asset:opentoonz.star", colorHex: "#A8512D")
     ]
 
     // Economy rebalancing (Nir Eyal Hook + BJ Fogg Tiny Habits + Duolingo design):
@@ -193,7 +214,7 @@ public enum CozyProgression {
             id: "twinkle-bow",
             name: "Twinkle Bow",
             category: "Mascot accessory",
-            symbolName: "sparkles",
+            symbolName: "asset:opentoonz.bow",
             colorHex: "#F2AFC5",
             coinCost: 6,
             requiredLevel: 1,
@@ -248,6 +269,26 @@ public enum CozyProgression {
             coinCost: 15,
             requiredLevel: 2,
             description: "Tiny jade headphones for Mochi. The world quiets when they go on."
+        ),
+        ShopCatalogItem(
+            id: "toonz-paint-brush",
+            name: "Toonz Paint Brush",
+            category: "Mascot accessory",
+            symbolName: "asset:opentoonz.brush",
+            colorHex: "#2F6F64",
+            coinCost: 18,
+            requiredLevel: 2,
+            description: "A tiny brush for planning days. Mochi taps it when a task turns into a win."
+        ),
+        ShopCatalogItem(
+            id: "toonz-ice-cream-break",
+            name: "Toonz Ice Cream Break",
+            category: "Care treat",
+            symbolName: "asset:opentoonz.icecream",
+            colorHex: "#F2AFC5",
+            coinCost: 22,
+            requiredLevel: 2,
+            description: "A small sweet break after a real focus block. Cute, not distracting."
         ),
         // ── Tier 2: weekly plateau (35–70 paws) ─────────────────────────────
         ShopCatalogItem(
@@ -321,6 +362,16 @@ public enum CozyProgression {
             description: "Jade-green mat Mochi curls up on. It's where the best ideas land."
         ),
         ShopCatalogItem(
+            id: "toonz-flower-frame",
+            name: "Toonz Flower Frame",
+            category: "Room decor",
+            symbolName: "asset:opentoonz.frame",
+            colorHex: "#F2AFC5",
+            coinCost: 68,
+            requiredLevel: 3,
+            description: "A hand-drawn frame for the room wall. It makes the desk feel less empty."
+        ),
+        ShopCatalogItem(
             id: "study-hoodie",
             name: "Study Hoodie",
             category: "Mascot outfit",
@@ -329,6 +380,36 @@ public enum CozyProgression {
             coinCost: 70,
             requiredLevel: 3,
             description: "Oversized mint hoodie for marathon study days. Mochi looks bookish."
+        ),
+        ShopCatalogItem(
+            id: "toonz-spring-toy",
+            name: "Toonz Spring Toy",
+            category: "Room decor",
+            symbolName: "asset:opentoonz.spring",
+            colorHex: "#8CB8D0",
+            coinCost: 82,
+            requiredLevel: 4,
+            description: "A bouncy desk toy that wiggles when you come back from a break."
+        ),
+        ShopCatalogItem(
+            id: "toonz-fishbowl",
+            name: "Toonz Fishbowl",
+            category: "Room decor",
+            symbolName: "asset:opentoonz.fish2",
+            colorHex: "#8CB8D0",
+            coinCost: 95,
+            requiredLevel: 4,
+            description: "A tiny animated-feeling fish friend for the Rewards Room shelf."
+        ),
+        ShopCatalogItem(
+            id: "toonz-ladybird-pin",
+            name: "Toonz Ladybird Pin",
+            category: "Mascot accessory",
+            symbolName: "asset:opentoonz.ladybird",
+            colorHex: "#A8512D",
+            coinCost: 105,
+            requiredLevel: 4,
+            description: "A bright little pin for Mochi's study outfit. Small luck, softly earned."
         ),
         // ── Tier 3: aspirational (120–180 paws, Lv 4–5 gate) ────────────────
         ShopCatalogItem(
@@ -345,7 +426,7 @@ public enum CozyProgression {
             id: "twinkle-wall-lights",
             name: "Twinkle Wall Lights",
             category: "Room decor",
-            symbolName: "lightbulb.led.fill",
+            symbolName: "asset:opentoonz.star",
             colorHex: "#5F7114",
             coinCost: 140,
             requiredLevel: 4,
@@ -355,11 +436,21 @@ public enum CozyProgression {
             id: "cloud-bed",
             name: "Cloud Bed",
             category: "Room decor",
-            symbolName: "bed.double.fill",
+            symbolName: "asset:opentoonz.umbrella",
             colorHex: "#8CB8D0",
             coinCost: 160,
             requiredLevel: 5,
             description: "Cloud-soft bed for the Rewards Room. Mochi naps here between blocks."
+        ),
+        ShopCatalogItem(
+            id: "toonz-arc-window",
+            name: "Toonz Arc Window",
+            category: "Room decor",
+            symbolName: "asset:opentoonz.arc",
+            colorHex: "#496FA6",
+            coinCost: 170,
+            requiredLevel: 5,
+            description: "A rounded window for the room, made for rainy countdown days."
         ),
         ShopCatalogItem(
             id: "gold-star-collar",

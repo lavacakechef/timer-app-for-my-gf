@@ -192,16 +192,7 @@ struct FirstRunCoachmarkSheet: View {
            CozyLottieMascot.isBundled(character: lottieCharacter) {
             CozyLottieMascot(characterID: lottieCharacter, state: state, size: 140)
         } else {
-            // Reduce Motion / no bundled Lottie — fall back to the
-            // mascot's SF Symbol so the page still has a friendly face.
-            let theme = CozyTheme.named(selectedTheme)
-            Image(systemName: style.symbolName)
-                .font(CozyType.metric)
-                .foregroundStyle(theme.tintedText(colorScheme))
-                .padding(20)
-                .background(
-                    Circle().fill(theme.surfaceTint.opacity(colorScheme == .dark ? 0.18 : 0.42))
-                )
+            MascotView(state: state, size: 140, styleIDOverride: style.id)
         }
     }
 

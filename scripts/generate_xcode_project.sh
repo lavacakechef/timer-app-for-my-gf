@@ -10,6 +10,7 @@ if ! command -v xcodegen >/dev/null 2>&1; then
 fi
 
 swift scripts/generate_xcode_assets.swift
+scripts/import_opentoonz_art_pack.sh
 xcodegen generate --spec project.yml
 
 echo "Generated $ROOT_DIR/CozyTime.xcodeproj"

@@ -1,0 +1,9 @@
+{
+  "images" : [
+    { "filename" : "opentoonz.custom.brush2.0001.png", "idiom" : "universal", "scale" : "1x" }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
